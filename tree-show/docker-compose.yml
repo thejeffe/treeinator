@@ -1,0 +1,12 @@
+# Optional: Docker instead of the systemd install
+services:
+  tree-show:
+    build: .
+    container_name: tree-show
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      WLED_HOST: 192.168.1.50
+      HTTP_PORT: "8080"
+    volumes:
+      - ./data:/data

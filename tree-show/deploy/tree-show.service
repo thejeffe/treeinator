@@ -1,0 +1,20 @@
+[Unit]
+Description=Tree show server (designs, playlists, DDP to WLED)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=treeshow
+WorkingDirectory=/opt/tree-show
+EnvironmentFile=/etc/tree-show.env
+ExecStart=/usr/bin/node /opt/tree-show/server.js
+Restart=always
+RestartSec=3
+# light hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/tree-show
+
+[Install]
+WantedBy=multi-user.target

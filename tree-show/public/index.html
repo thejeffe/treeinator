@@ -1,0 +1,1152 @@
+<title>Treeinator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen console. Phone: tree left, controls right (Mix or Shows view). Wide: Deck A | tree | Deck B over a bottom bar; Shows view puts playlist | tree | designs over the player bar. */
+:root{--bg:#EEF1F4;--panel:#FFFFFF;--ink:#1B2836;--muted:#5B6B7B;--rule:#CBD4DD;--accent:#C27400;--on-accent:#FFFFFF;--deckA:#2D68C4;--deckB:#C8102E;--stage:#0A0E15;--err:#C23B3B;--ok:#2E8B57;--row:#F4F6F8;
+--display:"Barlow Condensed","Arial Narrow",sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0D141B;--panel:#131D27;--ink:#DCE5EE;--muted:#90A2B4;--rule:#2A3949;--accent:#F2B33D;--on-accent:#1B1305;--deckA:#6FA3EE;--deckB:#F06A80;--stage:#05080C;--err:#F08585;--ok:#6FCF97;--row:#18232F;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0D141B;--panel:#131D27;--ink:#DCE5EE;--muted:#90A2B4;--rule:#2A3949;--accent:#F2B33D;--on-accent:#1B1305;--deckA:#6FA3EE;--deckB:#F06A80;--stage:#05080C;--err:#F08585;--ok:#6FCF97;--row:#18232F;color-scheme:dark}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.4 var(--body);overflow:hidden}
+/* DJ booth: Sir Mix-a-Lot mode (the mixer view) is always dark, with glowing deck colors */
+body.booth{--bg:#06080d;--panel:#0f151e;--ink:#e3eaf3;--muted:#8193a8;--rule:#223040;--row:#141c27;--accent:#F2B33D;--on-accent:#1B1305;--deckA:#4f8ff7;--deckB:#ff4d6a;--stage:#020305;color-scheme:dark;
+ background:radial-gradient(ellipse at 50% -20%,#1a2233 0%,#06080d 60%)}
+body.booth .box{background:linear-gradient(180deg,#121a25,#0c1119);border-color:#1f2b3a;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+body.booth .deck{box-shadow:0 0 0 1px #1f2b3a,0 0 24px -12px var(--c)}
+body.booth .pats button[aria-pressed="true"]{box-shadow:0 0 12px -2px var(--c)}
+body.booth .pads button:active,body.booth .pads button[aria-pressed="true"]{background:#fff;color:#000;box-shadow:0 0 18px #fff}
+body.booth #stream[aria-pressed="true"]{background:#e0233a;border-color:#e0233a;color:#fff;box-shadow:0 0 18px -2px #e0233a}
+body.booth input[type=range]{accent-color:var(--accent)}
+body.booth .mode{background:#0f151e}
+.mon{display:grid;grid-template-columns:auto 14px;gap:8px;justify-content:center;align-items:stretch;background:#020305;border-radius:10px;padding:8px 10px;position:relative;border:1px solid #1a2433}
+.mon canvas{display:block}
+.vu{width:14px;border-radius:4px;background:#0b1018;position:relative;overflow:hidden;border:1px solid #1d2836}
+.vu i{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(0deg,#2ecc71 0%,#f1c40f 70%,#e74c3c 100%);transition:height .08s linear}
+.monk{position:absolute;left:10px;top:8px;display:flex;gap:6px;align-items:center;font:600 10px var(--mono);letter-spacing:.1em;color:#7f90a5}
+.monk .led{width:8px;height:8px;border-radius:50%;background:#26313f}
+.monk .led.on{background:var(--c);box-shadow:0 0 8px var(--c)}
+.livebox{padding:6px}
+#stream{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;justify-items:start;width:100%;min-height:72px;padding:10px 16px;border-radius:12px;
+ border:2px solid #e0233a;background:linear-gradient(180deg,#2a0b10,#16070a);color:#ffd7dc;text-align:left}
+#stream .dotl{grid-row:span 2;width:22px;height:22px;border-radius:50%;background:#5a1a22;border:2px solid #e0233a}
+#stream .lt{font:700 26px/1 var(--display);letter-spacing:.08em;color:#fff}
+#stream small{font:500 11px var(--mono);letter-spacing:.06em;color:#ff9aa7;text-transform:uppercase}
+#stream:hover{box-shadow:0 0 18px -4px #e0233a}
+#stream[aria-pressed="true"]{background:#e0233a;color:#fff;box-shadow:0 0 28px -2px #e0233a;animation:onairpulse 1.6s ease-in-out infinite}
+#stream[aria-pressed="true"] .dotl{background:#fff;border-color:#fff;box-shadow:0 0 12px #fff}
+#stream[aria-pressed="true"] small{color:#ffe1e5}
+@keyframes onairpulse{50%{box-shadow:0 0 44px 2px #e0233a}}
+.onair{position:absolute;left:10px;bottom:8px;font:700 9px var(--mono);letter-spacing:.12em;padding:2px 5px;border-radius:3px;color:#ff4d4d;border:1px solid #ff4d4d;opacity:.15;transition:opacity .1s}
+.stage.live{box-shadow:0 0 0 2px #e0233a,0 0 40px -6px #e0233a}
+.stage .tag{position:absolute;top:10px;left:50%;transform:translateX(-50%);white-space:nowrap;font:700 11px var(--mono);letter-spacing:.14em;padding:3px 10px;border-radius:4px;color:#8796a8;border:1px solid #2a3646;background:rgba(0,0,0,.4)}
+.stage.live .tag{color:#fff;background:#e0233a;border-color:#e0233a;box-shadow:0 0 14px #e0233a}
+.app:not([data-view="mix"]) .stage .tag{display:none}
+.app{height:100%;box-sizing:border-box;padding-block:8px;padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));display:grid;gap:8px;grid-template-columns:minmax(0,40fr) minmax(0,60fr);grid-template-rows:minmax(0,1fr);grid-template-areas:"stage ctrl"}
+.stage{grid-area:stage;background:var(--stage);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;position:relative}
+.stage canvas{display:block}
+.stagebar{display:flex;gap:6px;align-items:center;margin-top:6px;min-height:14px}
+.beat{display:flex;gap:6px}
+.beat i{width:7px;height:7px;border-radius:50%;background:#2a3340}
+.beat i.on{background:#F2B33D}
+.src{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#7d8a99}
+.ctrl{grid-area:ctrl;display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0;overflow:hidden}
+.box{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:8px;display:grid;grid-template-columns:minmax(0,1fr);gap:6px;min-width:0;align-content:start}
+.deck{border-top:3px solid var(--c)}
+.dh{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.dh b{font:600 17px/1 var(--display);color:var(--c);letter-spacing:.02em}
+.k{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:min-content;gap:4px}
+button,.btn{font:500 12px var(--body);color:var(--ink);background:transparent;border:1px solid var(--rule);border-radius:7px;padding:6px 4px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+button:hover,.btn:hover{border-color:var(--muted)}
+button:focus-visible,.btn:focus-within,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button:disabled{opacity:.45;cursor:default}
+.pats button{padding:6px 0;min-height:28px;font-size:11px;letter-spacing:-.01em}
+@media (max-width:899px),(max-height:519px){.pats{max-height:131px;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}}
+.dh input{flex:1;min-width:0;font:500 12px var(--mono);text-transform:uppercase;padding:3px 6px}
+#topmode button{font-size:11px}
+.grp{display:flex;align-items:center;gap:6px;padding:8px 4px 2px 6px;position:sticky;top:-4px;background:var(--panel);z-index:1}
+.grp b{font:600 15px/1 var(--display);letter-spacing:.02em}
+.grp .k{flex:1}
+.grp button{flex:none;padding:3px 7px;font-size:11.5px}
+.lh select{font:500 12px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:4px 4px;min-width:0;max-width:52%}
+.restore{margin:8px 4px;align-self:flex-start}
+.pats button[aria-pressed="true"]{background:var(--c);border-color:var(--c);color:var(--panel)}
+.line{display:flex;gap:6px;align-items:center;min-width:0}
+.line input[type=color]{width:34px;height:26px;border:1px solid var(--rule);border-radius:6px;padding:1px;background:transparent;flex:none}
+input[type=range]{width:100%;min-width:0;accent-color:var(--accent);margin:0}
+input[type=text],input[type=number]{font:400 13px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px;min-width:0}
+input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;width:4.2em;text-align:right;padding:4px 5px}
+.val{font:500 11px var(--mono);font-variant-numeric:tabular-nums;min-width:3.2ch;text-align:right;flex:none}
+.seg2{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+#viewSeg{grid-template-columns:1fr 1fr auto auto}
+#reloadBtn{padding:6px 10px;font:600 15px var(--display);position:relative}
+#reloadBtn.upd{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#setBtn{padding:6px 10px;font:600 15px var(--display);letter-spacing:.03em}
+#setDlg{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:0;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px)}
+#setDlg::backdrop{background:rgba(0,0,0,.5)}
+#setDlg form{display:grid;gap:12px;padding:16px}
+#setDlg h2{font:600 22px/1 var(--display);margin:0}
+#setDlg fieldset{border:1px solid var(--rule);border-radius:10px;margin:0;padding:8px 10px 10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#setDlg legend{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+#setDlg label{display:grid;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+#setDlg label.wide{grid-column:1/-1}
+#setDlg input,#setDlg select{width:100%;box-sizing:border-box;font-size:14px}
+#setDlg select{font:400 14px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px}
+#setDlg label.chk{display:flex;align-items:center;gap:8px;color:var(--ink);align-self:end;min-height:31px}
+#setDlg label.chk input{width:auto;margin:0}
+#setDlg .note{grid-column:1/-1;font-size:12px;color:var(--muted);margin:0;line-height:1.4}
+#setDlg .acts{display:flex;gap:8px;justify-content:flex-end}
+#sTabs{grid-template-columns:repeat(5,minmax(0,1fr));position:sticky;top:-16px;z-index:2;background:var(--panel);padding:6px 0;margin:-4px 0 0}
+#sTabs button{padding:6px 2px}
+#setDlg .acts button{padding:7px 14px;font-size:13px}
+#setDlg .acts .pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#setDlg .acts .left{margin-right:auto}
+#edDlg{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:0;width:min(760px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+#edDlg::backdrop{background:rgba(0,0,0,.55)}
+#edDlg form{display:grid;grid-template-columns:200px minmax(0,1fr);gap:12px;padding:14px}
+#edDlg h2{font:600 22px/1 var(--display);margin:0;grid-column:1/-1}
+#edPrev{grid-row:span 1;align-self:start;position:sticky;top:0;background:var(--stage);border-radius:10px;display:grid;justify-items:center;padding:6px}
+#edCv{display:block}
+#edFields{display:grid;gap:10px;min-width:0}
+#edDlg fieldset{border:1px solid var(--rule);border-radius:10px;margin:0;padding:8px 10px 10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+#edDlg legend{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+#edDlg label{display:grid;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+#edDlg label.wide{grid-column:1/-1}
+#edDlg input[type=text],#edDlg input[type=number],#edDlg select{width:100%;box-sizing:border-box;font:400 14px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px}
+#edDlg input[type=color]{width:100%;height:32px;border:1px solid var(--rule);border-radius:7px;background:var(--panel);padding:2px;box-sizing:border-box}
+#edDlg .rng{display:flex;gap:8px;align-items:center}#edDlg .rng input{flex:1;min-width:0}#edDlg .rng output{font:500 12px var(--mono);min-width:4ch;text-align:right;color:var(--ink)}
+#edDlg label.chk{display:flex;align-items:center;gap:8px;color:var(--ink)}
+#edDlg .acts{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#edDlg .acts button{padding:7px 14px;font-size:13px}
+#edDlg .acts .pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#edDlg .acts .sp{flex:1}
+#edMsg{grid-column:1/-1}
+#edDlg .pathint{grid-column:1/-1;margin:0;font-size:12px;color:var(--muted);line-height:1.4}
+@media (max-width:640px){#edDlg form{grid-template-columns:minmax(0,1fr)}#edPrev{position:static}#edDlg fieldset{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+#calDlg{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:0;width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+#calDlg::backdrop{background:rgba(0,0,0,.55)}
+#calDlg form{display:grid;grid-template-columns:200px minmax(0,1fr);gap:12px;padding:14px}
+#calDlg h2{font:600 22px/1 var(--display);margin:0;grid-column:1/-1}
+#calPrev{background:var(--stage);border-radius:10px;display:grid;justify-items:center;align-self:start;padding:6px}
+#calSide{display:grid;gap:10px;align-content:start;min-width:0}
+#calDlg label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+#calDlg select,#calDlg input[type=number]{font:400 14px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px;width:100%;box-sizing:border-box}
+#calDlg .stp{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px;align-items:end}
+#calDlg .stp button{padding:6px 12px;font-size:16px}
+#calDlg label.chk{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:13px}
+#calWhat{font-size:13px;line-height:1.45;margin:0;color:var(--ink)}
+#calIdx{font:400 12px var(--mono);color:var(--muted);margin:0}
+#calLegend{display:flex;flex-wrap:wrap;gap:3px}#calLegend span{font:500 10px var(--mono);color:#000;border-radius:4px;padding:2px 4px;min-width:16px;text-align:center}
+#calDlg .acts{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}#calDlg .acts button{padding:7px 14px;font-size:13px}
+@media (max-width:600px){#calDlg form{grid-template-columns:minmax(0,1fr)}}
+.wledlinks{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.wledlinks a{font:500 12px var(--body);color:var(--accent);text-decoration:none;border:1px solid var(--rule);border-radius:7px;padding:5px 9px}
+.wledlinks a:hover{border-color:var(--accent)}
+.wledlinks span{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+#wledOut{grid-column:1/-1;font:400 12px/1.5 var(--mono);color:var(--ink);background:var(--bg);border-radius:7px;padding:6px 8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.seg2 button{font:600 15px var(--display);letter-spacing:.03em}
+.seg2 button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+#tabs button[aria-pressed="true"][data-d="0"]{background:var(--deckA);border-color:var(--deckA)}
+#tabs button[aria-pressed="true"][data-d="1"]{background:var(--deckB);border-color:var(--deckB)}
+.xf b{font:600 15px var(--display);flex:none} .xf .a{color:var(--deckA)} .xf .b{color:var(--deckB)}
+#autoBtn{flex:none;padding:5px 7px}
+#swapBtn{flex:none;padding:5px 9px;font-weight:600}
+/* crossfader + swap, overlaid on the tree in Sir Mix-a-Lot (easy to reach) */
+.xfover{position:absolute;left:10px;right:10px;bottom:30px;z-index:3;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:14px;background:rgba(5,8,12,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08)}
+.xfover b{font:600 20px var(--display)}
+.xfover #xf{-webkit-appearance:none;appearance:none;flex:1;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--deckA),var(--deckB));outline:none;margin:0}
+.xfover #xf::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:34px;height:34px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 2px 6px rgba(0,0,0,.6);cursor:grab}
+.xfover #xf::-moz-range-thumb{width:28px;height:28px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 2px 6px rgba(0,0,0,.6);cursor:grab}
+.xfover #swapBtn{padding:10px 16px;font-size:16px;border-radius:10px}
+#swapBtn.go{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#autoBtn[aria-pressed="true"],.seg button[aria-pressed="true"],.on-accent{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.bpm{font:600 24px/1 var(--display);font-variant-numeric:tabular-nums;min-width:2.6ch;flex:none}
+.tempo button{flex:1}
+.tempo .sm{flex:none;width:30px}
+.pads{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.pads button{padding:0;height:clamp(32px,5.5vh,56px);font:600 14px var(--display);letter-spacing:.04em}
+#blackTgl{width:100%;margin-top:5px;padding:8px 4px;font:600 14px var(--display);letter-spacing:.06em}
+#blackTgl[aria-pressed="true"]{background:#000;color:#fff;border-color:#fff;box-shadow:0 0 0 2px #e0233a inset}
+.pads button.held{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.seg{display:flex;border:1px solid var(--rule);border-radius:7px;overflow:hidden;min-width:0}
+.seg button{border:0;border-radius:0;flex:1;padding:5px 2px}
+.file input{position:absolute;opacity:0;width:1px;height:1px}
+.files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+#stream[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.msg{font:400 11px var(--mono);color:var(--muted);min-height:1.1em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg.err{color:var(--err)}
+#saveForm{display:flex;gap:4px;min-width:0}
+#saveForm input{flex:1}
+#saveForm button{flex:none;padding:5px 9px}
+.title{display:none}
+.mixer{display:contents}
+/* views */
+.app[data-view="mix"] .sh{display:none!important}
+.app[data-view="shows"] .mx{display:none!important}
+.deck:not(.active){display:none}
+/* shows */
+.nowk{display:flex;align-items:baseline;gap:6px;min-width:0}
+/* mode badge: MANUAL / ON SCHEDULE / OVERRIDE, one compact line */
+.mode{flex:none;display:flex;flex-wrap:nowrap;align-items:center;gap:8px;justify-content:flex-start;text-align:left;padding:3px 8px 3px 4px;border-radius:8px;border:1.5px solid;min-width:0;min-height:30px;box-sizing:border-box;white-space:nowrap}
+.mode b{font:700 10.5px var(--mono);letter-spacing:.08em;flex:none;padding:3px 6px;border-radius:4px}
+#modeInfo{font-size:12.5px;line-height:1.25;min-width:0;flex:1 1 auto;color:var(--ink);overflow:hidden;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+@media (max-width:519px){#modeInfo{-webkit-line-clamp:3;line-clamp:3;font-size:12px}.mode.override b{display:none}}
+.mode.manual{border-color:var(--muted)}.mode.manual b{background:var(--muted);color:var(--panel)}
+.mode.sched{border-color:var(--ok)}.mode.sched b{background:var(--ok);color:#fff}
+.mode.override{border-color:var(--accent)}.mode.override b{background:var(--accent);color:var(--on-accent)}
+#modeAct{display:none;flex:none;margin-left:auto;font:600 12px var(--body);color:var(--accent);white-space:nowrap;opacity:.9}
+.mode.override #modeAct{display:inline-block}
+@media (max-width:519px){#modeAct .lg{display:none}#modeAct{font-size:15px}}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--rule);flex:none;align-self:center}
+.dot.play{background:var(--ok)} .dot.prev{background:var(--accent)}
+.now{font:500 13px var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.left{font:500 11px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+.pbtns{display:grid;grid-template-columns:minmax(0,1.5fr) auto minmax(0,1fr);gap:4px}
+.opts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.opts label{display:flex;gap:4px;align-items:center}
+#brightLbl input{width:110px}#plSecIn{width:56px}
+#plList input[type=number]::placeholder{color:var(--muted);opacity:.7}#plList input.own{border-color:var(--accent);font-weight:600}#brightOut{font:500 11px var(--mono);min-width:4ch;text-align:right;color:var(--ink)}
+#schBtn{padding:4px 10px;font-size:12px}
+#schNote{font:400 11px var(--mono);color:var(--muted);min-height:1.1em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#liveBtn{margin-left:auto;font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:#cfd8e3;border-color:#3a4656;padding:3px 8px}
+#schDlg{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:0;width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+#schDlg::backdrop{background:rgba(0,0,0,.5)}
+#schDlg form{display:grid;gap:12px;padding:16px}
+#schDlg h2{font:600 22px/1 var(--display);margin:0}
+#schDlg .note{font-size:12px;color:var(--muted);margin:0;line-height:1.4}
+#schDlg label.chk{display:flex;align-items:center;gap:8px;font-size:14px}
+#schList{display:grid;gap:8px}
+.sw{border:1px solid var(--rule);border-radius:10px;padding:8px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr) auto;gap:8px;align-items:start}
+.sw .days{display:flex;gap:4px;flex-wrap:wrap}
+.sw .rep{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sw .rep select,.sw .rep input[type=date]{width:auto;font:400 14px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px}
+.sw .rep label.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink)}
+.sw.dated{border-color:var(--accent)}
+.sw .days button{width:38px;padding:5px 0;font-size:12px}
+.sw .days button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.sw label{display:grid;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+.sw .when{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}.sw .when small{font:400 11px var(--mono);color:var(--muted);min-height:1em}
+#schLoc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}#schLoc label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+#schLoc input{font:400 14px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px;width:100%;box-sizing:border-box}
+#schConf{display:grid;gap:4px}#schConf .cf{margin:0;font-size:12.5px;line-height:1.4;padding:6px 8px;border-radius:7px;border:1px solid var(--rule)}
+#schConf .cf.bad{border-color:var(--err);color:var(--err)}#schConf .cf.info{border-color:var(--accent)}#schConf .cf.ok{color:var(--ok);border-color:var(--ok)}
+.sw .mv{display:grid;gap:4px;align-self:start}.sw .mv button{padding:3px 8px}
+#schPlan{display:grid;gap:6px}#schPlan h3{font:600 15px var(--display);margin:4px 0 0;letter-spacing:.02em}
+#schPlan .pd{border:1px solid var(--rule);border-radius:8px;padding:6px 8px;font-size:13px;line-height:1.45}
+#schPlan .pd b{font:600 12px var(--mono);color:var(--muted);display:block;margin-bottom:2px}
+#schPlan .pd .off{color:var(--muted)}#schPlan .pd .tn{font:500 11px var(--mono);color:var(--muted)}
+.sw .num{font:600 13px var(--display);letter-spacing:.04em;color:var(--muted);margin-right:2px}
+#schSun{font:400 12px var(--mono);color:var(--ink);margin:0}
+.sw input[type=time],.sw select{font:400 14px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px;min-width:0;width:100%;box-sizing:border-box}
+#schDlg .acts{display:flex;gap:8px;justify-content:flex-end}
+#schDlg .acts button{padding:7px 14px;font-size:13px}
+#schDlg .acts .pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#schDlg .acts .left{margin-right:auto}
+@media (max-width:640px){.sw{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.sw label.what{grid-column:1/-1;grid-row:3}}
+.listbox{display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden}
+.lh{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 8px 6px;border-bottom:1px solid var(--rule)}
+.lh h2{font:600 17px/1 var(--display);margin:0;letter-spacing:.02em}
+.plbar{display:flex;gap:4px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--rule)}
+.plbar{flex-wrap:wrap}.plbar select{flex:1 1 160px;min-width:0;font:600 14px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 6px}
+.plbar button{flex:none;padding:5px 8px;font-size:12px}
+.plonair{font:500 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ok);padding:0 8px 4px}
+.lh .k{margin-left:auto}
+.list{overflow:auto;min-height:0;flex:1;padding:4px;display:flex;flex-direction:column;gap:3px;overscroll-behavior:contain}
+.row{display:flex;align-items:center;gap:4px;background:var(--row);border-radius:7px;padding:4px 4px 4px 8px;min-width:0}
+.row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.row .nm small{display:block;font:400 10.5px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.row button{flex:none;padding:4px 7px;font-size:12px}
+.row button.ic{width:28px;padding:4px 0;font-size:14px;line-height:1}
+.row button.danger{color:var(--err);border-color:var(--err)}
+.row.cur{box-shadow:inset 3px 0 0 var(--ok)}
+.empty{padding:14px 10px;color:var(--muted);font-size:13px;line-height:1.5}
+.note{padding:6px 10px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--rule)}
+#subtabs{display:grid}
+.app[data-sub="pl"] .sh-designs{display:none}
+.app[data-sub="ds"] .sh-playlist{display:none}
+.sh-player{flex:none}
+.listbox{flex:1}
+@media (max-width:899px),(max-height:519px){
+ .row{flex-wrap:wrap;row-gap:4px;padding:5px 4px 4px 8px}
+ .lh h2{display:none}
+ .lh select{max-width:none;flex:1}
+ .row .nm{flex:1 1 100%}
+ .row .nm+*{margin-left:auto}
+ .app[data-view="mix"] .ctrl>.box,.app[data-view="mix"] .mixer>.box{flex:none}
+ .app[data-view="mix"] .ctrl{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}
+}
+@media (min-width:900px) and (min-height:520px){
+ .app{grid-template-columns:minmax(0,1fr) minmax(260px,1.05fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"title mode view" "deckA stage deckB" "mix mix mix";gap:10px;padding-block:12px}
+ .title{display:flex;grid-area:title;align-items:baseline;gap:12px;min-width:0}
+ #modeBadge{grid-area:mode;align-self:center;justify-self:stretch}
+ .title span{display:none}
+ .title h1{font:600 26px/1 var(--display);margin:0;white-space:nowrap} .title span{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ #viewSeg{grid-area:view;justify-self:end;width:300px}
+ .ctrl{display:contents}
+ #tabs,#subtabs{display:none!important}
+ .deck,.deck:not(.active){display:grid;align-self:stretch;grid-template-rows:auto auto minmax(0,1fr) auto;min-height:0;overflow:hidden}
+ .deck .pats{overflow-y:auto;min-height:0;align-content:start;padding-right:2px}
+ .deck[data-deck="0"],.sh-playlist{grid-area:deckA} .deck[data-deck="1"],.sh-designs{grid-area:deckB}
+ .app[data-sub] .sh-playlist,.app[data-sub] .sh-designs{display:flex}
+ .app[data-view="mix"] .sh-playlist,.app[data-view="mix"] .sh-designs{display:none}
+ .pats{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px} .pats button{padding:10px 2px;font-size:13px}
+ .mixer{display:grid;grid-area:mix;grid-template-columns:1.4fr 1.1fr 1.2fr 1.3fr;gap:10px}
+ .files{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .pads button{height:48px}
+ .sh-player{grid-area:mix;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.3fr);align-items:center;gap:12px}
+}
+</style>
+<div class="app" id="app" data-view="shows" data-sub="pl">
+ <div class="title"><h1>Treeinator</h1><span id="subtitle">Build playlists, edit designs and run the tree.</span></div>
+ <div class="stage"><span class="tag" id="stageTag">TREE · NOW</span><canvas id="view" aria-label="Tree preview"></canvas>
+  <div class="xf xfover mx" id="xfOver"><b class="a">A</b><input type="range" id="xf" min="0" max="100" step="1" value="0" aria-label="Crossfader"><b class="b">B</b><button id="swapBtn" type="button" title="Glide the crossfader to the other deck (about a second)">⇄ Swap</button></div>
+  <div class="stagebar"><div class="beat" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span class="src" id="src">Mixer</span><button type="button" id="liveBtn" hidden>Back to live tree</button></div>
+ </div>
+ <div class="ctrl">
+  <button type="button" id="modeBadge" class="mode manual" title="Open the schedule"><b id="modeName">MANUAL</b><span id="modeInfo">No schedule · plays only when you press Play</span><span id="modeAct" aria-label="Resume schedule">↺<span class="lg"> Resume</span></span></button>
+  <div class="seg2" id="viewSeg" role="group" aria-label="View"><button aria-pressed="true" data-v="shows">Shows</button><button aria-pressed="false" data-v="mix">Sir Mix-a-Lot</button><button type="button" id="reloadBtn" title="Reload the app with the latest version" aria-label="Reload app">↻</button><button type="button" id="setBtn" title="Settings" aria-label="Settings">⚙</button></div>
+
+  <!-- MIX -->
+  <div class="seg2 mx" id="tabs"><button aria-pressed="true" data-d="0">Deck A</button><button aria-pressed="false" data-d="1">Deck B</button></div>
+  <section class="box deck mx active" style="--c:var(--deckA)" data-deck="0"><div class="dh"><b>Deck A</b><input id="at" type="text" maxlength="60" placeholder="Text to scroll" aria-label="Deck A text" hidden><span class="k" id="ak">pattern</span></div>
+   <div class="mon"><canvas class="deckcv" data-d="0" aria-label="Deck A monitor"></canvas><div class="vu" aria-hidden="true"><i></i></div><div class="monk"><span class="led"></span>DECK A</div><span class="onair">ON AIR</span></div>
+   <div class="pats"></div>
+   <div class="line"><input type="color" id="a1" value="#2d68c4" aria-label="Deck A color 1"><input type="color" id="a2" value="#f2a900" aria-label="Deck A color 2"><span class="k">Spd</span><input type="range" id="as" min="0.25" max="4" step="0.25" value="1" aria-label="Deck A speed"><span class="val" id="aso">1×</span></div>
+  </section>
+  <section class="box deck mx" style="--c:var(--deckB)" data-deck="1"><div class="dh"><b>Deck B</b><input id="bt" type="text" maxlength="60" placeholder="Text to scroll" aria-label="Deck B text" hidden><span class="k" id="bk">pattern</span></div>
+   <div class="mon"><canvas class="deckcv" data-d="1" aria-label="Deck B monitor"></canvas><div class="vu" aria-hidden="true"><i></i></div><div class="monk"><span class="led"></span>DECK B</div><span class="onair">ON AIR</span></div>
+   <div class="pats"></div>
+   <div class="line"><input type="color" id="b1" value="#c8102e" aria-label="Deck B color 1"><input type="color" id="b2" value="#ffc72c" aria-label="Deck B color 2"><span class="k">Spd</span><input type="range" id="bs" min="0.25" max="4" step="0.25" value="1" aria-label="Deck B speed"><span class="val" id="bso">1×</span></div>
+  </section>
+  <div class="mixer mx">
+   <section class="box mx livebox"><button id="stream" aria-pressed="false"><span class="dotl"></span><span class="lt">GO LIVE</span><small>send the mix to the tree</small></button></section>
+   <section class="box mx"><span class="k">Crossfader</span>
+    <div class="line"><span class="k">A ⇄ B is on the tree</span><button id="autoBtn" aria-pressed="false">Auto off</button></div>
+    <div class="line tempo"><span class="bpm" id="bpm">120</span><span class="k">BPM</span><button id="minus" class="sm" aria-label="Slower">−</button><button id="plus" class="sm" aria-label="Faster">+</button><button id="tap">Tap</button></div>
+   </section>
+   <section class="box mx"><span class="k">Pads · hold</span>
+    <div class="pads"><button data-p="flash">Flash</button><button data-p="strobe">Strobe</button><button data-p="black">Black</button><button data-p="invert" title="Swaps each deck’s Color 1 and Color 2 while held">Invert</button></div>
+    <button type="button" id="blackTgl" aria-pressed="false" title="Tap to black out the tree, tap again to bring it back (key B)">Blackout: off</button>
+   </section>
+   <section class="box mx" id="topBox"><span class="k">Topper</span>
+    <div class="seg" id="topmode"><button aria-pressed="true" data-v="star">Star</button><button aria-pressed="false" data-v="flake">Flake</button><button aria-pressed="false" data-v="ripple">Ripple</button><button aria-pressed="false" data-v="follow">Follow</button><button aria-pressed="false" data-v="image">Image</button></div>
+    <div class="line"><span class="k">Bright</span><input id="bright" type="range" min="5" max="100" step="5" value="100" aria-label="Tree brightness (same as on Shows)" title="Tree brightness: the same setting as on Shows"><span class="val" id="bOut">100%</span></div>
+   </section>
+   <section class="box mx"><span class="k">Images · save · live</span>
+    <div class="files"><label class="btn file">Tree img<input id="fTree" type="file" accept="image/*"></label><label class="btn file" id="topImgBtn">Topper img<input id="fTop" type="file" accept="image/*"></label><button id="saveBtn">Save design</button></div>
+    <form id="saveForm" hidden><input id="saveName" type="text" maxlength="60" aria-label="Design name"><button type="submit" class="on-accent">Save</button><button type="button" id="saveCancel" aria-label="Cancel">✕</button></form>
+    <div class="msg" id="msg" role="status">Tree: Sample · Top: Star</div>
+   </section>
+  </div>
+
+  <!-- SHOWS -->
+  <section class="box sh sh-player">
+   <div style="display:grid;gap:4px;min-width:0">
+    <div class="nowk"><span class="dot" id="nowDot"></span><span class="now" id="nowName">Tree stopped</span><span class="left" id="nowLeft"></span></div>
+    <div class="msg" id="smsg" role="status"></div>
+    <div id="schNote"></div>
+   </div>
+   <div class="pbtns"><button id="playTree">Play on tree</button><button id="nextBtn">Next</button><button id="previewBtn">Preview</button></div>
+   <div class="opts">
+    <div class="seg" id="modeSeg" style="flex:1 1 180px"><button data-v="order" aria-pressed="false">In order</button><button data-v="shuffle" aria-pressed="false">Shuffle</button><button data-v="random" aria-pressed="false">Random</button></div>
+    <label class="k" for="plSecIn" title="How long each design plays. A design in the list can override this.">Each design <input id="plSecIn" type="number" min="3" max="3600" step="5" value="45">s</label>
+    <label class="k" for="fade">Fade <input id="fade" type="number" min="0" max="30" step="1" value="3">s</label>
+    <label class="k" id="brightLbl" for="treeBright">Brightness <input id="treeBright" type="range" min="5" max="100" step="5" value="100"><output id="brightOut">100%</output></label>
+    <button type="button" id="schBtn">Schedule</button>
+   </div>
+  </section>
+  <div class="seg2 sh" id="subtabs"><button aria-pressed="true" data-s="pl" id="tabPl">Playlist</button><button aria-pressed="false" data-s="ds" id="tabDs">Designs</button></div>
+  <section class="box sh listbox sh-playlist">
+   <div class="lh"><h2>Playlists</h2><span class="k" id="plTotal"></span></div>
+   <div class="plbar"><select id="plSel" aria-label="Playlist"></select><button type="button" id="plNew" title="New playlist">+ New</button><button type="button" id="plRen" title="Rename this playlist">Rename</button><button type="button" id="plCopy" title="Copy this playlist">Copy</button><button type="button" class="ic" id="plDel" title="Delete this playlist" aria-label="Delete this playlist">✕</button></div>
+   <div class="plonair" id="plOnAir" hidden></div>
+   <div class="note" id="randNote" hidden>Random makes a new look every <input id="randSec" type="number" min="3" max="3600" step="5" value="60" aria-label="Seconds per random look">s. Your list below is kept for when you switch back.</div>
+   <div class="list" id="plList"></div>
+  </section>
+  <section class="box sh listbox sh-designs">
+   <div class="lh"><h2>Designs</h2><select id="catSel" aria-label="Show category"></select><button id="surprise">+ Random</button></div>
+   <div class="list" id="dsList"></div>
+  </section>
+ </div>
+</div>
+<dialog id="edDlg" aria-labelledby="edTitle">
+ <form method="dialog" id="edForm" novalidate>
+  <h2 id="edTitle">Edit design</h2>
+  <div id="edPrev"><canvas id="edCv" aria-label="Design preview"></canvas><label class="chk" style="color:#cfd8e3;font-size:12px;margin-top:6px"><input id="edLive" type="checkbox">Show on tree while editing</label></div>
+  <div id="edFields">
+   <fieldset><legend>Design</legend>
+    <label>Name<input id="edName" type="text" maxlength="60"></label>
+    <label>Category<input id="edCat" type="text" maxlength="40" list="edCats"></label><datalist id="edCats"></datalist>
+    <label class="chk wide"><input id="edStrict" type="checkbox">Only this design’s colors <span style="color:var(--muted);font-size:12px">(every light uses one of the colors below, brighter or dimmer: no blends, white or extra colors; good for team colors)</span></label>
+   </fieldset>
+   <fieldset id="edA"><legend>Pattern</legend>
+    <label class="wide">Pattern<select data-k="p"></select></label>
+    <p class="wide pathint" data-hint></p>
+    <label class="chk wide" data-cl><input type="checkbox" data-k="cl">Classic colors <span style="color:var(--muted);font-size:12px">(off: use only Color 1 and Color 2)</span></label>
+    <label>Color 1 (background)<input type="color" data-k="c0"></label>
+    <label>Color 2 (main)<input type="color" data-k="c1"></label>
+    <label class="wide">Speed<span class="rng"><input type="range" min="0.1" max="4" step="0.05" data-k="sp"><output></output></span></label>
+    <label class="wide" data-text>Text<input type="text" maxlength="60" data-k="text"></label>
+    <label class="wide" data-below>Below the text<select data-k="below"></select></label>
+    <label class="wide" data-gfx>Graphic<select data-k="g"></select></label>
+   </fieldset>
+   <fieldset><legend>Second pattern</legend>
+    <label>Use it<select id="edMode"><option value="off">Off</option><option value="blend">Blend both</option><option value="alt">Alternate</option></select></label>
+    <label data-blend>Blend<span class="rng"><input id="edXf" type="range" min="0" max="1" step="0.05"><output></output></span></label>
+    <label data-alt>Switch every<select id="edAuto"><option value="4">4 beats</option><option value="8">8 beats</option><option value="16">16 beats</option><option value="32">32 beats</option></select></label>
+   </fieldset>
+   <fieldset id="edB"><legend>Second pattern settings</legend>
+    <label class="wide">Pattern<select data-k="p"></select></label>
+    <p class="wide pathint" data-hint></p>
+    <label class="chk wide" data-cl><input type="checkbox" data-k="cl">Classic colors <span style="color:var(--muted);font-size:12px">(off: use only Color 1 and Color 2)</span></label>
+    <label>Color 1 (background)<input type="color" data-k="c0"></label>
+    <label>Color 2 (main)<input type="color" data-k="c1"></label>
+    <label class="wide">Speed<span class="rng"><input type="range" min="0.1" max="4" step="0.05" data-k="sp"><output></output></span></label>
+    <label class="wide" data-text>Text<input type="text" maxlength="60" data-k="text"></label>
+    <label class="wide" data-below>Below the text<select data-k="below"></select></label>
+    <label class="wide" data-gfx>Graphic<select data-k="g"></select></label>
+   </fieldset>
+   <fieldset><legend>Timing and topper</legend>
+    <label>Tempo (BPM)<input id="edBpm" type="number" min="30" max="240" step="1" inputmode="numeric"></label>
+    <label data-top>Topper<select id="edTop"><option value="star">Star</option><option value="flake">Snowflake</option><option value="ripple">Ripple</option><option value="follow">Follow tree</option><option value="image">Image</option></select></label>
+    <label class="chk wide" data-top><input id="edTcOn" type="checkbox">Own topper colors</label>
+    <label data-tc>Topper color 1<input id="edTc0" type="color"></label>
+    <label data-tc>Topper color 2<input id="edTc1" type="color"></label>
+   </fieldset>
+  </div>
+  <div class="msg" id="edMsg" role="status"></div>
+  <div class="acts"><button type="button" id="edMixer">Open in Sir Mix-a-Lot</button><span class="sp"></span><button type="button" id="edCancel">Cancel</button><button type="button" id="edCopy">Save as new</button><button type="submit" class="pri" id="edSave">Save</button></div>
+ </form>
+</dialog>
+<dialog id="schDlg" aria-labelledby="schTitle">
+ <form method="dialog" id="schForm" novalidate>
+  <h2 id="schTitle">Schedule</h2>
+  <label class="chk"><input id="schOn" type="checkbox">Run the tree on this schedule</label>
+  <p class="note" id="schOnNote"></p>
+  <p class="note" id="schInfo"></p>
+  <div id="schLoc"><label>Latitude<input id="schLat" type="number" step="0.0001" min="-90" max="90" inputmode="decimal" placeholder="34.05"></label><label>Longitude<input id="schLon" type="number" step="0.0001" min="-180" max="180" inputmode="decimal" placeholder="-118.25"></label><button type="button" id="schGeo">Use my location</button></div>
+  <p id="schSun"></p>
+  <div id="schList"></div>
+  <div><button type="button" id="schAdd">+ Add a time</button></div>
+  <div id="schConf" aria-live="polite"></div>
+  <div id="schPlan" aria-live="polite"></div>
+  <div class="msg" id="schMsg" role="status"></div>
+  <div class="acts"><button type="button" class="left" id="schCancel">Cancel</button><button type="submit" class="pri" id="schSave">Save</button></div>
+ </form>
+</dialog>
+<dialog id="calDlg" aria-labelledby="calTitle">
+ <form method="dialog" id="calForm" novalidate>
+  <h2 id="calTitle">Calibrate LED mapping</h2>
+  <div id="calPrev"><canvas id="calCv" aria-label="What the tree should show"></canvas><span class="src" style="margin-top:6px;text-align:center">Tree unrolled: rib 1 on the left, top row up</span></div>
+  <div id="calSide">
+   <label>Test<select id="calMode">
+    <option value="rib">One rib at a time</option>
+    <option value="ribs">All ribs, each its own color</option>
+    <option value="row">One row across all ribs</option>
+    <option value="halves">Left and right halves</option>
+    <option value="pixel">One pixel</option>
+    <option value="topper">Topper rings</option>
+    <option value="white">Everything dim white</option>
+    <option value="off">Everything off</option>
+   </select></label>
+   <div class="stp" id="calRibStep"><button type="button" id="calRibPrev" aria-label="Previous rib">‹</button><label>Rib<input id="calRib" type="number" min="1" inputmode="numeric"></label><button type="button" id="calRibNext" aria-label="Next rib">›</button></div>
+   <div class="stp" id="calRowStep"><button type="button" id="calRowPrev" aria-label="Row up">‹</button><label>Row (1 = top)<input id="calRow" type="number" min="1" inputmode="numeric"></label><button type="button" id="calRowNext" aria-label="Row down">›</button></div>
+   <label class="chk"><input id="calAuto" type="checkbox">Step automatically every 2 seconds</label>
+   <p id="calWhat"></p>
+   <div id="calLegend"></div>
+   <p id="calIdx"></p>
+   <div class="msg" id="calMsg" role="status"></div>
+  </div>
+  <div class="acts"><button type="button" id="calDone">Done</button></div>
+ </form>
+</dialog>
+<dialog id="setDlg" aria-labelledby="setTitle">
+ <form method="dialog" id="setForm" novalidate>
+  <h2 id="setTitle">Settings</h2>
+  <div class="seg2" id="sTabs" role="tablist" aria-label="Settings sections"><button type="button" data-t="wled" aria-pressed="true">WLED</button><button type="button" data-t="layout" aria-pressed="false">Layout</button><button type="button" data-t="color" aria-pressed="false">Color</button><button type="button" data-t="text" aria-pressed="false">Text</button><button type="button" data-t="ha" aria-pressed="false">Home Asst.</button></div>
+  <fieldset data-tab="wled"><legend>WLED controller</legend>
+   <label class="wide">Host name or IP<input id="sHost" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="3.led.example.com"></label>
+   <label>DDP port<input id="sPort" type="number" min="1" max="65535" inputmode="numeric"></label>
+   <label>&nbsp;<button type="button" id="sCheck">Check WLED</button></label>
+   <div class="wide" style="grid-column:1/-1;display:grid;gap:4px"><button type="button" id="sWledSetup">Set up WLED for tree-show</button><span class="note" style="font-size:12px;color:var(--muted)">Makes WLED start up blank and go dark (not back to its own designs) when tree-show stops sending. WLED boots off, and its own look is set to plain black; your WLED presets are kept.</span></div>
+   <label class="chk wide"><input id="sPower" type="checkbox">Turn WLED off when the tree stops (otherwise WLED shows its own preset)</label>
+   <div class="wide wledlinks" id="sWledLinks"></div>
+   <div id="wledOut" hidden></div>
+  </fieldset>
+  <fieldset data-tab="wled"><legend>Frame rate</legend>
+   <label class="chk wide"><input id="sFpsAuto" type="checkbox">Match WLED's frame rate automatically</label>
+   <label>Frames per second (maximum)<input id="sFps" type="number" min="5" max="120" step="5" inputmode="numeric"></label>
+   <p class="note" id="sFpsNote" style="align-self:end"></p>
+  </fieldset>
+  <fieldset data-tab="color"><legend>Color</legend>
+   <label>Gamma (1 = off)<input id="sGamma" type="number" min="1" max="3" step="0.1" inputmode="decimal"></label>
+   <label class="wide">Dimming<select id="sDither">
+    <option value="off">Off: as before (hues can drift when dim)</option>
+    <option value="spatial">Spatial dithering: steady fine pattern, exact colors</option>
+    <option value="hue">Hue-preserving: steady, colors kept close</option>
+    <option value="temporal">Temporal dithering: exact, needs a fast WLED refresh</option>
+    <option value="wled">Temporal dithering in WLED (WLED build from Lickety Split)</option></select></label>
+   <label class="chk wide"><input id="sDitherDark" type="checkbox">Also dither the darkest levels (smoother dark fades; may sparkle or shimmer)</label>
+   <label id="sDitherFpsL">WLED dither refresh<select id="sDitherFps"><option value="auto">Auto: as fast as the LEDs allow</option><option value="240">240 per second</option><option value="180">180 per second</option><option value="120">120 per second</option><option value="90">90 per second</option><option value="60">60 per second</option><option value="30">30 per second</option><option value="0">Only when a new frame arrives</option></select></label>
+   <label id="sDitherHzL">Flicker limit<select id="sDitherHz"><option value="0">Off: finest steps (may blink when the refresh is slow)</option><option value="20">20 Hz</option><option value="30">30 Hz</option><option value="40">40 Hz</option><option value="60">60 Hz (steadiest)</option></select></label>
+   <p class="note" id="sWledDither"></p>
+   <p class="note">At low brightness, rounding each color channel on its own shifts hues. These dim with fractions of a level and round only once. Spatial shares levels between neighboring pixels (by rib and row); temporal flips each pixel between levels over time. In WLED: WLED does gamma and dimming itself at every LED refresh with 16-bit precision, and tree-show sends the plain picture and the brightness. Applies right away.</p>
+  </fieldset>
+  <fieldset data-tab="layout"><legend>Tree layout</legend>
+   <label class="chk wide"><input id="sTopper" type="checkbox">Topper (star) is connected</label>
+   <label>Ribs<input id="sRibs" type="number" min="1" max="64" inputmode="numeric"></label>
+   <label>Pixels per rib<input id="sRows" type="number" min="2" max="300" inputmode="numeric"></label>
+   <label>Arc (degrees)<input id="sArc" type="number" min="10" max="360" inputmode="numeric"></label>
+   <label>Topper starts at WLED pixel<input id="sTop" type="number" min="0" max="6000" inputmode="numeric"></label>
+   <label>WLED mapping<select id="sMap"><option value="strip">Strip order</option><option value="matrix">2D matrix</option></select></label>
+   <label class="chk"><input id="sFlip" type="checkbox">Flip left/right</label>
+   <p class="note" id="sNote"></p>
+   <div class="wide" style="grid-column:1/-1"><button type="button" id="sCal">Calibrate LED mapping…</button></div>
+  </fieldset>
+  <fieldset data-tab="text"><legend>Text on the tree</legend>
+   <label>Text deskew (%)<input id="sDeskew" type="number" min="0" max="100" step="5" inputmode="numeric"></label>
+   <label>Text position (pixels from top)<input id="sTTop" type="number" min="0" max="299" inputmode="numeric"></label>
+   <label>Text height (pixels per dot)<input id="sTSize" type="number" min="1" max="8" step="0.5" inputmode="decimal"></label>
+   <label>Text width (ribs per dot)<input id="sTWidth" type="number" min="0.5" max="4" step="0.1" inputmode="decimal"></label>
+   <p class="note wide">Where text sits on the tree and how big it is. The note on the Layout tab shows which pixels the text covers.</p>
+  </fieldset>
+  <fieldset data-tab="ha"><legend>Home Assistant (MQTT)</legend>
+   <p class="note wide">The tree shows up in Home Assistant as a device (MQTT discovery): on/off and brightness, playlist, hold a design, next, schedule, and settings. Needs the MQTT integration (Mosquitto broker) in Home Assistant; log in with a Home Assistant user.</p>
+   <label class="chk wide"><input id="sMqOn" type="checkbox">Connect to Home Assistant</label>
+   <label>Broker host or IP<input id="sMqHost" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="homeassistant.local"></label>
+   <label>Port<input id="sMqPort" type="number" min="1" max="65535" inputmode="numeric"></label>
+   <label>User name<input id="sMqUser" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+   <label>Password<input id="sMqPass" type="password" autocomplete="new-password"></label>
+   <label>Topic name<input id="sMqBase" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="treeinator"></label>
+   <p class="note wide" id="sMqNote"></p>
+  </fieldset>
+  <div class="msg" id="sMsg" role="status"></div>
+  <div class="acts"><button type="button" class="left" id="sCancel">Cancel</button><button type="submit" class="pri" id="sSave">Save</button></div>
+ </form>
+</dialog>
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script>
+(function(){
+var E=window.TreeEngine,N=E.N,PI=Math.PI,TAU=2*PI;
+var $=function(id){return document.getElementById(id)};
+if(!E.CONFIG.topper){$('topBox').hidden=true;$('topImgBtn').hidden=true} // topper not connected (Settings)
+var app=$('app'),msg=$('msg'),smsg=$('smsg');
+function say(el,t,err){el.textContent=t||'';el.className='msg'+(err?' err':'')}
+
+// ---------------- mixer state ----------------
+var M={look:E.defaultLook(),run:E.newRun(),bright:1,pad:{flash:0,strobe:0,black:0,invert:0},flashLvl:0,names:{tree:'Sample',top:'Star'},img:new Uint8Array(N*3)};
+var frame=new Float32Array(N*3),view=new Float32Array(N*3);
+
+// pattern buttons
+var patBoxes=[];
+document.querySelectorAll('.deck').forEach(function(sec){var d=+sec.dataset.deck,box=sec.querySelector('.pats');patBoxes[d]=box;
+ E.PATS.forEach(function(pt){var b=document.createElement('button');b.textContent=pt.n;b.dataset.id=pt.id;b.type='button';
+  b.addEventListener('click',function(){deck(d).p=pt.id;if(pt.id==='text'&&!deck(d).text)deck(d).text='MERRY CHRISTMAS';syncPats()});box.appendChild(b)})});
+function deck(d){return d?M.look.B:M.look.A}
+function syncPats(){[0,1].forEach(function(d){patBoxes[d].querySelectorAll('button').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.id===deck(d).p?'true':'false')});
+  var ti=$(d?'bt':'at'),isT=deck(d).p==='text';ti.hidden=!isT;$(d?'bk':'ak').hidden=isT;if(isT&&document.activeElement!==ti)ti.value=deck(d).text||'MERRY CHRISTMAS'})}
+[['at',0],['bt',1]].forEach(function(x){$(x[0]).addEventListener('input',function(){deck(x[1]).text=$(x[0]).value||' '})});
+[['a1',0,0],['a2',0,1],['b1',1,0],['b2',1,1]].forEach(function(x){var el=$(x[0]);el.addEventListener('input',function(){deck(x[1]).c[x[2]]=el.value;delete M.look.tc})});
+[['as','aso',0],['bs','bso',1]].forEach(function(x){var el=$(x[0]),o=$(x[1]);el.addEventListener('input',function(){deck(x[2]).sp=+el.value;o.textContent=(+el.value)+'×'})});
+var xf=$('xf');xf.addEventListener('input',function(){M.swap=null;$('swapBtn').classList.remove('go');M.look.xf=xf.value/100;if(M.look.auto){M.look.auto=0;syncAuto()}});
+// Swap: glide the crossfader to the other side over ~1 s (pressing again mid-glide turns it around)
+$('swapBtn').addEventListener('click',function(){var cur=M.run.xf!=null&&M.look.auto?M.run.xf:(M.look.xf||0);if(M.look.auto){M.look.auto=0;syncAuto()}
+ var to=M.swap?(M.swap.to>0.5?0:1):(cur<0.5?1:0);M.swap={from:cur,to:to,t0:performance.now(),dur:1000*Math.abs(to-cur)||1};M.look.xf=cur;this.classList.add('go')});
+function swapStep(){if(!M.swap)return;var k=Math.min(1,(performance.now()-M.swap.t0)/M.swap.dur),e=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+ M.look.xf=M.swap.from+(M.swap.to-M.swap.from)*e;xf.value=Math.round(M.look.xf*100);if(k>=1){M.look.xf=M.swap.to;M.swap=null;$('swapBtn').classList.remove('go')}}
+var autoBtn=$('autoBtn'),AUTOS=[0,8,16];autoBtn.addEventListener('click',function(){M.look.auto=AUTOS[(AUTOS.indexOf(M.look.auto||0)+1)%3];syncAuto()});
+function syncAuto(){var n=M.look.auto||0;autoBtn.textContent=n?'Auto '+n:'Auto off';autoBtn.setAttribute('aria-pressed',n?'true':'false')}
+function seg(id,fn){var b=document.querySelectorAll('#'+id+' button');b.forEach(function(btn){btn.addEventListener('click',function(){fn(btn.dataset.v)})})}
+function segSet(id,v){document.querySelectorAll('#'+id+' button').forEach(function(o){o.setAttribute('aria-pressed',o.dataset.v===v?'true':'false')})}
+seg('topmode',function(v){M.look.top=v;segSet('topmode',v)});
+document.querySelectorAll('#tabs button').forEach(function(t){t.addEventListener('click',function(){document.querySelectorAll('#tabs button').forEach(function(o){o.setAttribute('aria-pressed',o===t?'true':'false')});document.querySelectorAll('.deck').forEach(function(d){d.classList.toggle('active',d.dataset.deck===t.dataset.d)})})});
+var bpmEl=$('bpm');function setBpm(v){M.look.bpm=Math.max(40,Math.min(200,Math.round(v)));bpmEl.textContent=M.look.bpm}
+$('minus').addEventListener('click',function(){setBpm(M.look.bpm-2)});$('plus').addEventListener('click',function(){setBpm(M.look.bpm+2)});
+var taps=[];function tap(){var n=performance.now();taps=taps.filter(function(x){return n-x<2500});taps.push(n);if(taps.length>=2){setBpm(60000/((taps[taps.length-1]-taps[0])/(taps.length-1)));M.run.beat=Math.ceil(M.run.beat)}}
+$('tap').addEventListener('click',tap);
+var br=$('bright'),bo=$('bOut');br.addEventListener('input',function(){setGlobalBright(+br.value)}); // the one global brightness
+var padBtns={};document.querySelectorAll('.pads button').forEach(function(b){var p=b.dataset.p;padBtns[p]=b;
+ b.addEventListener('pointerdown',function(e){e.preventDefault();padOn(p)});['pointerup','pointerleave','pointercancel'].forEach(function(ev){b.addEventListener(ev,function(){padOff(p)})});b.addEventListener('contextmenu',function(e){e.preventDefault()})});
+function padOn(p){if(!M.pad[p]){M.pad[p]=1;padBtns[p].classList.add('held');if(p==='flash')M.flashLvl=1}}
+function padOff(p){if(M.pad[p]){M.pad[p]=0;padBtns[p].classList.remove('held')}}
+var keyPad={'1':'flash','2':'strobe','3':'black','4':'invert'};
+document.addEventListener('keydown',function(e){if(/INPUT|TEXTAREA/.test(e.target.tagName)||app.dataset.view!=='mix')return;if(keyPad[e.key]){padOn(keyPad[e.key]);e.preventDefault()}else if(e.code==='Space'){tap();e.preventDefault()}});
+document.addEventListener('keyup',function(e){if(keyPad[e.key])padOff(keyPad[e.key])});
+// Blackout toggle: latches (tap on, tap off), unlike the Black pad which only works while held
+function setBlackout(on){M.blackout=!!on;var b=$('blackTgl');b.setAttribute('aria-pressed',on?'true':'false');b.textContent=on?'BLACKOUT ON · tap to bring back':'Blackout: off'}
+$('blackTgl').addEventListener('click',function(){setBlackout(!M.blackout)});
+document.addEventListener('keydown',function(e){if(/INPUT|TEXTAREA/.test(e.target.tagName)||app.dataset.view!=='mix')return;if(e.key==='b'||e.key==='B'){setBlackout(!M.blackout);e.preventDefault()}});
+function loadMixer(look){M.look=JSON.parse(JSON.stringify(look));['A','B'].forEach(function(k){var d=M.look[k]=M.look[k]||{p:'spin',c:['#ffffff','#000000'],sp:1};d.c=d.c||['#ffffff','#000000'];d.sp=d.sp||1});
+ M.look.xf=M.look.xf||0;M.look.auto=M.look.auto||0;M.look.bpm=M.look.bpm||120;M.look.top=M.look.top||'star';M.run=E.newRun();
+ if(look.img){var u=E.b64dec(look.img);if(u.length===N*3){M.img=u;M.names={tree:'From design',top:'From design'}}}
+ setImgOnLook();
+ $('a1').value=M.look.A.c[0];$('a2').value=M.look.A.c[1];$('b1').value=M.look.B.c[0];$('b2').value=M.look.B.c[1];
+ $('as').value=M.look.A.sp;$('aso').textContent=M.look.A.sp+'×';$('bs').value=M.look.B.sp;$('bso').textContent=M.look.B.sp+'×';
+ xf.value=Math.round(M.look.xf*100);syncAuto();bpmEl.textContent=M.look.bpm;segSet('topmode',M.look.top);syncPats();showNames()}
+
+// ---------------- images ----------------
+function starPath(c,cx,cy,R,r){c.beginPath();E.starPts(R,r).forEach(function(p,j){j?c.lineTo(cx+p[0],cy+p[1]):c.moveTo(cx+p[0],cy+p[1])});c.closePath()}
+var sampleTree=document.createElement('canvas');sampleTree.width=200;sampleTree.height=300;
+(function(){var c=sampleTree.getContext('2d');c.fillStyle='#0b2a5c';c.fillRect(0,0,200,300);for(var k=0;k<10;k++){c.fillStyle=k%2?'#e8eef7':'#c8102e';c.fillRect(0,30+k*24,200,12)}c.fillStyle='#ffc72c';starPath(c,100,150,60,26);c.fill()})();
+var sampleTop=document.createElement('canvas');sampleTop.width=100;sampleTop.height=100;
+(function(){var c=sampleTop.getContext('2d');c.fillStyle='#173a7a';c.fillRect(0,0,100,100);c.fillStyle='#ffc72c';starPath(c,50,52,48,24);c.fill()})();
+var srcTree=sampleTree,srcTop=sampleTop;
+function drawCover(ctx,img,W,H){ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);var iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height,sc=Math.max(W/iw,H/ih);ctx.drawImage(img,(W-iw*sc)/2,(H-ih*sc)/2,iw*sc,ih*sc)}
+function sampleImages(){var a=document.createElement('canvas');a.width=136;a.height=200;var ct=a.getContext('2d');drawCover(ct,srcTree,136,200);var d=ct.getImageData(0,0,136,200).data;
+ var b=document.createElement('canvas');b.width=88;b.height=88;var cp=b.getContext('2d');drawCover(cp,srcTop,88,88);var e=cp.getImageData(0,0,88,88).data;
+ for(var k=0;k<N;k++){var p=E.PX[k],src,o;
+  if(p.tree){var X=Math.min(135,Math.max(0,Math.round(68+p.x*67))),Y=Math.min(199,Math.round(p.u*199));src=d;o=(Y*136+X)*4}
+  else{var X2=Math.round(44+p.tp.x*4),Y2=Math.round(44+p.tp.y*4);src=e;o=(Y2*88+X2)*4}
+  M.img[k*3]=src[o];M.img[k*3+1]=src[o+1];M.img[k*3+2]=src[o+2]}
+ setImgOnLook()}
+function setImgOnLook(){M.look.img=E.b64enc(M.img);delete M.look._img}
+function showNames(){say(msg,'Tree: '+M.names.tree+' · Top: '+M.names.top)}
+function loadFile(input,which){input.addEventListener('change',function(){var f=input.files&&input.files[0];if(!f)return;if(!/^image\//.test(f.type)){say(msg,'That file is not an image. Choose a PNG, JPG or WebP.',true);return}
+ var img=new Image();img.onload=function(){if(which==='tree')srcTree=img;else srcTop=img;M.names[which]=f.name;sampleImages();showNames();
+   if(which==='tree'&&M.look.A.p!=='image'&&M.look.B.p!=='image'){say(msg,'Loaded. Pick the Image pattern on a deck to show it.')}
+   if(which==='top'&&M.look.top!=='image'){M.look.top='image';segSet('topmode','image')}};
+ img.onerror=function(){say(msg,'Couldn’t read that image. Try a PNG or JPG.',true)};img.src=URL.createObjectURL(f)})}
+loadFile($('fTree'),'tree');loadFile($('fTop'),'top');
+
+// ---------------- store: tree-show server, or this browser ----------------
+var LSKEY='tree-shows-v1';
+var Store={server:false,designs:[],playlist:null,playlists:[],activeId:null,status:null,
+ init:function(){return fetch('api/state',{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){if(!j||!Array.isArray(j.designs))throw 0;Store.server=true;Store.designs=j.designs;Store.removed=j.removed||[];Store.playlists=j.playlists||[Object.assign({id:'main',name:'Playlist'},j.playlist)];Store.activeId=j.activeId||Store.playlists[0].id;
+   var want=null;try{want=localStorage.getItem('treeSelPl')}catch(e){}Store.playlist=Store.playlists.find(function(x){return x.id===want})||Store.playlists.find(function(x){return x.id===Store.activeId})||Store.playlists[0];
+   Store.status=j.status;connectWs()}).catch(function(){Store.server=false;var s=null;try{s=JSON.parse(localStorage.getItem(LSKEY)||'null')}catch(e){}
+   if(!s||!Array.isArray(s.designs)){s=E.starterShows();}if(E.mergeLibrary(s))try{localStorage.setItem(LSKEY,JSON.stringify(s))}catch(e){}
+   Store.designs=s.designs;Store.removed=s.removed||[];Store.playlist=s.playlist;Store.playlist.running=false;Store.playlist.id='main';Store.playlist.name=Store.playlist.name||'Playlist';Store.playlists=[Store.playlist];Store.activeId='main'})},
+ removed:[],
+ saveLocal:function(){if(Store.server)return;try{localStorage.setItem(LSKEY,JSON.stringify({designs:Store.designs,removed:Store.removed,playlist:Store.playlist}))}catch(e){say(smsg,'Couldn’t save in this browser. Storage may be full or blocked.',true)}},
+ api:function(method,url,body){return fetch(url,{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('Server said '+r.status));return j})})},
+ putDesign:function(d){var i=Store.designs.findIndex(function(x){return x.id===d.id});if(i>=0)Store.designs[i]=d;else Store.designs.push(d);
+   if(Store.server)return Store.api('PUT','api/designs/'+encodeURIComponent(d.id),d);Store.saveLocal();return Promise.resolve(d)},
+ delDesign:function(id){Store.designs=Store.designs.filter(function(x){return x.id!==id});Store.playlists.forEach(function(pl){pl.items=pl.items.filter(function(it){return it.id!==id})});
+   if(E.isLibraryId(id)&&Store.removed.indexOf(id)<0)Store.removed.push(id);
+   if(Store.server)return Store.api('DELETE','api/designs/'+encodeURIComponent(id));Store.saveLocal();return Promise.resolve()},
+ restoreLib:function(){if(Store.server)return Store.api('POST','api/library/restore').then(function(j){Store.designs=j.designs;Store.removed=[];return j.added});
+   var s={designs:Store.designs,removed:[],playlist:Store.playlist};var n=E.mergeLibrary(s);Store.removed=[];Store.saveLocal();return Promise.resolve(n)},
+ plTimer:null,
+ putPlaylist:function(){if(!Store.server){Store.saveLocal();return}clearTimeout(Store.plTimer);var pl=Store.playlist;Store.plTimer=setTimeout(function(){Store.api('PUT','api/playlists/'+encodeURIComponent(pl.id),pl).catch(function(e){say(smsg,e.message,true)})},300)},
+ player:function(action,extra){if(!Store.server)return Promise.reject(new Error('Open this page from tree-show to play on the tree.'));var b={action:action};for(var k in extra||{})b[k]=extra[k];
+   return Store.api('POST','api/player',b).then(function(st){Store.status=st;renderNow();return st})}
+};
+function getDesign(id){return Store.designs.find(function(d){return d.id===id})||null}
+
+// ---------------- websocket (server mode) ----------------
+var ws=null,wsBackoff=1000,mirror=new Uint8Array(N*3),mirrorAt=0,watching=false;
+/* Reload: fetch the newest build id from tree-show, drop any browser caches, and reload with a fresh URL
+   so the home-screen app can't keep showing an old copy. The button turns gold when a newer build is installed. */
+var PAGE_BUILD=document.body.getAttribute('data-build')||'';
+function checkBuild(b){if(!b||!PAGE_BUILD)return;var btn=$('reloadBtn'),nw=b!==PAGE_BUILD;btn.classList.toggle('upd',nw);btn.textContent='↻';btn.title=nw?'A newer version is installed. Tap to load it.':'Reload the app with the latest version'}
+function hardReload(){var btn=$('reloadBtn');btn.disabled=true;btn.textContent='…';
+ var go=function(b){var u=location.pathname+'?v='+encodeURIComponent(b||'')+'&t='+Date.now()+location.hash;location.replace(u)};
+ var clear=(window.caches&&caches.keys)?caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}).catch(function(){}):Promise.resolve();
+ var unreg=(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations)?navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.unregister()}))}).catch(function(){}):Promise.resolve();
+ Promise.all([clear,unreg,fetch('api/version?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json()}).catch(function(){return{}})]).then(function(r){go(r[2].build)})}
+$('reloadBtn').addEventListener('click',hardReload);
+function connectWs(){try{ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+location.pathname.replace(/[^/]*$/,'')+'ws');ws.binaryType='arraybuffer'}catch(e){return}
+ ws.onopen=function(){wsBackoff=1000;watching=false;updateWatch()};
+ ws.onmessage=function(e){if(typeof e.data!=='string'){if(e.data.byteLength===N*3){mirror.set(new Uint8Array(e.data));mirrorAt=performance.now()}return}
+  try{var j=JSON.parse(e.data);if(j.type==='status'){var chg=Store.activeId!==j.activeId||!!(Store.status&&Store.status.playing)!==!!j.playing;Store.status=j;checkBuild(j.build);updateWatch();if(j.activeId)Store.activeId=j.activeId;renderNow();if(chg)fillPlSel()}else if(j.type==='error'){say(msg,j.error,true)}}catch(_){}};
+ ws.onclose=function(){ws=null;if(live)stopLive('Lost the connection to tree-show. Reconnecting…');setTimeout(connectWs,wsBackoff);wsBackoff=Math.min(10000,wsBackoff*2)}}
+function wsSend(x){if(ws&&ws.readyState===1)ws.send(x)}
+// Watch the real tree feed: on Shows, and in Sir Mix-a-Lot whenever this page isn't the one live (the stage then shows what the tree really gets).
+function updateWatch(){var st=Store.status,want=!!Store.server&&(app.dataset.view==='shows'?!local.running:!live)&&!!(st&&(st.playing||st.live));if(want!==watching&&ws&&ws.readyState===1){wsSend(JSON.stringify({type:'watch',on:want}));watching=want}}
+
+// ---------------- live streaming from the mixer ----------------
+var live=false,liveSent=0,liveAt=0,streamBtn=$('stream');
+function liveLabel(on){streamBtn.querySelector('.lt').textContent=on?'ON AIR':'GO LIVE';streamBtn.querySelector('small').textContent=on?'tap to stop · the tree shows your mix':'send the mix to the tree'}
+function stopLive(m){live=false;if(ws&&ws.readyState===1)wsSend(JSON.stringify({type:'unlive'}));setTimeout(updateWatch,0);streamBtn.setAttribute('aria-pressed','false');liveLabel(false);if(m)say(msg,m,!!m);else showNames()}
+streamBtn.addEventListener('click',function(){if(live){stopLive();return}
+ if(!Store.server){say(msg,'Going live works when this page is opened from tree-show.',true);return}
+ if(!ws||ws.readyState!==1){say(msg,'Not connected to tree-show yet. Try again in a moment.',true);return}
+ live=true;updateWatch();liveSent=0;liveAt=performance.now();streamBtn.setAttribute('aria-pressed','true');liveLabel(true);say(msg,'Live. The playlist pauses while you mix.')});
+var wledBuf=new Uint8Array(E.WN*3);
+function pushLive(){if(!live||!ws||ws.readyState!==1||ws.bufferedAmount>20000)return;ws.send(E.toWled(view,1,wledBuf));liveSent++;var n=performance.now();if(n-liveAt>1000){say(msg,'Live to the tree · '+Math.round(liveSent*1000/(n-liveAt))+' fps');liveSent=0;liveAt=n}}
+
+// ---------------- save design ----------------
+var saveForm=$('saveForm'),saveName=$('saveName');
+function autoName(){var a=E.PATS.find(function(p){return p.id===M.look.A.p}),b=E.PATS.find(function(p){return p.id===M.look.B.p});
+ var n=M.look.xf>=1?b.n:(M.look.xf>0||M.look.auto)?a.n+' + '+b.n:a.n;var i=2,base=n;while(Store.designs.some(function(d){return d.name===n}))n=base+' '+(i++);return n}
+$('saveBtn').addEventListener('click',function(){saveForm.hidden=false;msg.hidden=true;saveName.value=autoName();saveName.focus();saveName.select()});
+function closeSave(){saveForm.hidden=true;msg.hidden=false}
+$('saveCancel').addEventListener('click',closeSave);
+saveForm.addEventListener('submit',function(e){e.preventDefault();var name=saveName.value.trim();if(!name){saveName.focus();say(msg,'Enter a name for the design.',true);msg.hidden=false;return}
+ var look=JSON.parse(JSON.stringify(M.look));var usesImg=look.A.p==='image'||look.B.p==='image'||look.top==='image';if(!usesImg)delete look.img;
+ var d={id:'d-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:name.slice(0,60),cat:'My designs',look:look};
+ Store.putDesign(d).then(function(){closeSave();say(msg,'Saved “'+d.name+'”. Find it under Shows.');renderLists()}).catch(function(err){closeSave();say(msg,err.message,true)})});
+
+// ---------------- shows ----------------
+var local=new E.Player({getDesign:getDesign}),tryLook=null,tryRun=null;
+var plList=$('plList'),dsList=$('dsList');
+function fmt(s){s=Math.max(0,Math.round(s));var h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return(h?h+':'+String(m).padStart(2,'0'):m)+':'+String(x).padStart(2,'0')}
+function el(tag,attrs,kids){var e=document.createElement(tag);for(var k in attrs||{}){if(k==='text')e.textContent=attrs[k];else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k])}(kids||[]).forEach(function(c){if(c)e.appendChild(c)});return e}
+function lookSummary(l){var a=E.PATS.find(function(p){return p.id===(l.A&&l.A.p)})||{n:'?'},b=E.PATS.find(function(p){return p.id===(l.B&&l.B.p)})||{n:'?'};var tx=(l.A&&l.A.p==='text'&&l.A.text)?'“'+l.A.text+'” · ':'';return tx+(l.auto?a.n+' ↔ '+b.n+' every '+l.auto:l.xf>=1?b.n:l.xf>0?a.n+' + '+b.n:a.n)+' · '+({follow:'topper follows',image:'topper image',flake:'snowflake',ripple:'ripples'}[l.top]||'star')}
+function confirmBtn(label,fn){var b=el('button',{type:'button','class':'ic',title:'Delete','aria-label':label,text:'✕'});var armed=null;
+ b.addEventListener('click',function(){if(armed){clearTimeout(armed);fn();return}b.classList.add('danger');b.textContent='Delete?';b.classList.remove('ic');armed=setTimeout(function(){armed=null;b.classList.remove('danger');b.classList.add('ic');b.textContent='✕'},3000)});return b}
+function renderLists(){
+ var pl=Store.playlist,items=pl.items,cur=curId();
+ plList.textContent='';
+ if(!items.length)plList.appendChild(el('div',{'class':'empty',text:'Your playlist is empty. Add designs with + on the Designs list.'}));
+ var total=0;
+ items.forEach(function(it,i){var d=getDesign(it.id);if(!d)return;total+=+it.sec||pl.sec||45;
+  var sec=el('input',{type:'number',min:'3',max:'3600',step:'5',value:it.sec?String(it.sec):'',placeholder:String(pl.sec||45),title:'Leave empty to use the playlist’s time ('+(pl.sec||45)+' s). Type a number to give this design its own time.','aria-label':'Seconds for '+d.name+' (empty = playlist time)'});
+  if(it.sec)sec.classList.add('own');
+  sec.addEventListener('change',function(){if(sec.value===''){delete it.sec;sec.classList.remove('own')}else{var v=Math.max(3,Math.min(3600,Math.round(+sec.value)));sec.value=v;it.sec=v;sec.classList.add('own')}Store.putPlaylist();local.setPlaylist(pl);updateTotals()});
+  plList.appendChild(el('div',{'class':'row'+(cur===it.id?' cur':'')},[
+   el('div',{'class':'nm',title:d.name},[document.createTextNode(d.name),el('small',{text:lookSummary(d.look)})]),
+   sec,el('span',{'class':'k',text:'s'}),
+   el('button',{type:'button','class':'ic','aria-label':'Move up',text:'↑',onclick:function(){if(i>0){items.splice(i-1,0,items.splice(i,1)[0]);plChanged()}}}),
+   el('button',{type:'button','class':'ic','aria-label':'Move down',text:'↓',onclick:function(){if(i<items.length-1){items.splice(i+1,0,items.splice(i,1)[0]);plChanged()}}}),
+   el('button',{type:'button','class':'ic','aria-label':'Remove from playlist',text:'−',onclick:function(){items.splice(i,1);plChanged()}})]))});
+ updateTotals();
+ dsList.textContent='';
+ var cats=[],byCat={};Store.designs.forEach(function(d){var c=d.cat||'My designs';if(!byCat[c]){byCat[c]=[];cats.push(c)}byCat[c].push(d)});
+ var order=['My designs'].concat(E.CATS);cats.sort(function(x,y){var i=order.indexOf(x),j=order.indexOf(y);return(i<0?99:i)-(j<0?99:j)});
+ var sel=$('catSel'),want=sel.value||'all';sel.textContent='';sel.appendChild(el('option',{value:'all',text:'All ('+Store.designs.length+')'}));
+ cats.forEach(function(c){sel.appendChild(el('option',{value:c,text:c+' ('+byCat[c].length+')'}))});
+ sel.value=cats.indexOf(want)>=0?want:'all';
+ if(!Store.designs.length)dsList.appendChild(el('div',{'class':'empty',text:'No designs yet. Build a look on the Mix view and tap Save design, or tap + Random.'}));
+ cats.forEach(function(c){if(sel.value!=='all'&&sel.value!==c)return;var list=byCat[c];
+  dsList.appendChild(el('div',{'class':'grp'},[el('b',{text:c}),el('span',{'class':'k',text:String(list.length)}),
+   el('button',{type:'button',text:'+ Add all',onclick:function(){var n=0;list.forEach(function(d){if(!items.some(function(it){return it.id===d.id})){items.push({id:d.id});n++}});plChanged();say(smsg,n?'Added '+n+' '+c+' designs to the playlist.':'All '+c+' designs are already in the playlist.')}})]));
+  (c==='My designs'?list.slice().reverse():list).forEach(function(d){
+  var inPl=items.filter(function(it){return it.id===d.id}).length;
+  dsList.appendChild(el('div',{'class':'row'+(cur===d.id?' cur':'')},[
+   el('div',{'class':'nm',title:d.name},[document.createTextNode(d.name),el('small',{text:lookSummary(d.look)+(inPl?' · in playlist':'')})]),
+   el('button',{type:'button',text:'Try',onclick:function(){tryDesign(d)}}),
+   el('button',{type:'button',text:'On tree',title:'Put this design on the tree and keep it there until you go back to the playlist',onclick:function(){holdDesign(d)}}),
+   el('button',{type:'button',text:'Edit',onclick:function(){openEditor(d)}}),
+   el('button',{type:'button','class':'ic','aria-label':'Add to playlist',text:'+',onclick:function(){items.push({id:d.id});plChanged();say(smsg,'Added “'+d.name+'” to the playlist.')}}),
+   confirmBtn('Delete '+d.name,function(){if(tryLook&&tryLook.id===d.id){tryLook=null}Store.delDesign(d.id).then(function(){local.setPlaylist(Store.playlist);renderLists();say(smsg,'Deleted “'+d.name+'”.')}).catch(function(e){say(smsg,e.message,true)})})]))})});
+ if(Store.removed&&Store.removed.length)dsList.appendChild(el('button',{type:'button','class':'restore',text:'Bring back '+Store.removed.length+' deleted library design'+(Store.removed.length>1?'s':''),onclick:function(){Store.restoreLib().then(function(n){renderLists();say(smsg,'Brought back '+n+' designs.')}).catch(function(e){say(smsg,e.message,true)})}}));
+ $('tabPl').textContent='Playlist ('+items.length+')';$('tabDs').textContent='Designs ('+Store.designs.length+')';
+}
+function updateTotals(){var pl=Store.playlist,t=pl.items.reduce(function(s,it){return s+(getDesign(it.id)?(+it.sec||pl.sec||45):0)},0);$('plTotal').textContent=pl.mode==='random'?'Random':pl.items.length+' · '+fmt(t)+' loop'}
+function plChanged(){Store.putPlaylist();local.setPlaylist(Store.playlist);renderLists()}
+function syncOpts(){var pl=Store.playlist;segSet('modeSeg',pl.mode);$('fade').value=pl.fade;$('plSecIn').value=pl.sec||45;$('randSec').value=pl.randSec;$('randNote').hidden=pl.mode!=='random'}
+seg('modeSeg',function(v){Store.playlist.mode=v;syncOpts();plChanged()});
+$('plSecIn').addEventListener('change',function(){var v=Math.max(3,Math.min(3600,Math.round(+this.value||45)));this.value=v;Store.playlist.sec=v;plChanged()});
+$('fade').addEventListener('change',function(){var v=Math.max(0,Math.min(30,+$('fade').value||0));$('fade').value=v;Store.playlist.fade=v;plChanged()});
+$('randSec').addEventListener('change',function(){var v=Math.max(3,Math.min(3600,Math.round(+$('randSec').value||60)));$('randSec').value=v;Store.playlist.randSec=v;plChanged()});
+// general brightness: applies to everything sent to the tree, right away
+var brTimer=0,brBusy=0;
+$('treeBright').addEventListener('input',function(){setGlobalBright(+this.value)});
+function showBright(v){$('treeBright').value=v;$('brightOut').textContent=v+'%';$('bright').value=v;$('bOut').textContent=v+'%'}
+function setGlobalBright(v){showBright(v);brBusy=Date.now();clearTimeout(brTimer);
+ brTimer=setTimeout(function(){if(!Store.server){say(smsg,'Brightness works when this page is opened from tree-show.',true);return}fetch('api/brightness',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:v/100})}).catch(function(){say(smsg,'Couldn’t change the brightness.',true)})},150)}
+function syncBright(){var s=Store.status;if(!s||s.bright==null||Date.now()-brBusy<1500)return;var v=Math.round(s.bright*100);if(+$('treeBright').value!==v||+$('bright').value!==v)showBright(v)}
+$('catSel').addEventListener('change',function(){renderLists();dsList.scrollTop=0});
+$('surprise').addEventListener('click',function(){var r=E.randomLook();var d={id:'d-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:r.name,cat:'My designs',look:r.look};
+ var i=2,base=d.name;while(Store.designs.some(function(x){return x.name===d.name}))d.name=base+' '+(i++);
+ Store.putDesign(d).then(function(){renderLists();tryDesign(d);say(smsg,'Made “'+d.name+'”. Tap + to add it to the playlist.')}).catch(function(e){say(smsg,e.message,true)})});
+// Tapping the badge: during an OVERRIDE it hands the tree back to the schedule; otherwise it opens the schedule.
+$('modeBadge').addEventListener('click',function(){var b=this;
+ if(!b.classList.contains('override')){$('schBtn').click();return}
+ if(live)stopLive();if(local.running)local.stop();tryLook=null;
+ var m=app.dataset.view==='mix'?msg:smsg;b.disabled=true;$('modeInfo').textContent='Going back to the schedule…';
+ fetch('api/schedule/resume',{method:'POST',cache:'no-store'}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||'Couldn’t resume the schedule.');return j})})
+  .then(function(st){Store.status=st;if(st.activeId)Store.activeId=st.activeId;say(m,'Back on the schedule.');renderNow();fillPlSel();updateWatch()})
+  .catch(function(e){say(m,e.message,true);renderNow()}).then(function(){b.disabled=false})});
+$('liveBtn').addEventListener('click',function(){tryLook=null;if(local.running)local.stop();say(smsg,'');renderNow();updateWatch()});
+function tryDesign(d){local.stop();tryLook=d;tryRun=E.newRun();renderNow();updateWatch()}
+function curId(){if(local.running)return local.status().id;if(tryLook)return tryLook.id;var s=Store.status;return s&&s.playing&&s.player?s.player.id:null}
+
+var playBtn=$('playTree'),nextBtn=$('nextBtn'),prevBtn=$('previewBtn');
+playBtn.addEventListener('click',function(){
+ if(!Store.server){say(smsg,'Playing on the tree works when this page is opened from tree-show. Preview here works anywhere.',true);return}
+ var s=Store.status;
+ if(tryLook&&!local.running){Store.player('design',{design:tryLook}).then(function(){say(smsg,'Showing “'+tryLook.name+'” on the tree. Play on tree resumes the playlist.');tryLook=null;updateWatch()}).catch(function(e){say(smsg,e.message,true)});return}
+ var stop=s&&s.playing&&!(s.player&&s.player.hold)&&s.activeId===Store.playlist.id;
+ Store.player(stop?'stop':'play',stop?null:{playlist:Store.playlist.id}).then(function(st){Store.activeId=st.activeId;say(smsg,st.playing?'Playlist is running on the tree. It keeps going with this page closed.':'Tree stopped. WLED goes back to its own preset.');updateWatch()}).catch(function(e){say(smsg,e.message,true)})});
+function holdDesign(d){if(!Store.server){say(smsg,'Putting a design on the tree works when this page is opened from tree-show.',true);return}
+ Store.player('design',{design:d,hold:true}).then(function(st){Store.status=st;tryLook=null;if(local.running)local.stop();say(smsg,'“'+d.name+'” is on the tree and stays there. ↩ Playlist goes back to the playlist.');renderNow();updateWatch()}).catch(function(e){say(smsg,e.message,true)})}
+nextBtn.addEventListener('click',function(){var s=Store.status;if(!local.running&&Store.server&&s&&s.playing&&s.player&&s.player.hold){Store.player('release').then(function(st){Store.status=st;say(smsg,st.playing?'Back to the playlist.':'Nothing in the playlist, so the tree stopped.');renderNow()}).catch(function(e){say(smsg,e.message,true)});return}
+ if(local.running){local.next();renderNow();return}if(Store.server&&Store.status&&Store.status.playing)Store.player('next').catch(function(e){say(smsg,e.message,true)});else say(smsg,'Nothing is playing yet.')});
+prevBtn.addEventListener('click',function(){if(local.running){local.stop();say(smsg,'')}else{tryLook=null;local.setPlaylist(Store.playlist);local.start();if(!local.running||!local.cur){local.stop();say(smsg,'Add designs to the playlist first, or pick Random.',true)}else say(smsg,'Previewing the playlist on this page only.')}renderNow();updateWatch()});
+function t12s(hm){if(!hm)return '';if(hm==='24:00'||hm==='00:00')return 'midnight';var h=+hm.slice(0,2),m=hm.slice(3);return (h%12||12)+(m==='00'?'':':'+m)+(h<12?' AM':' PM')}
+function whenTxt(x){if(!x)return '';if(x.day&&x.day!=='today'&&x.day!=='tomorrow')return x.day+(x.at?' at '+(x.sun?x.sun+' (≈'+t12s(x.at)+')':t12s(x.at)):'');var t=x.sun?x.sun.replace(/([+-])(\d+)$/,function(_,sg,n){n=+n;return ' '+(sg==='+'?'+':'−')+(n>=60?Math.floor(n/60)+' h'+(n%60?' '+n%60+' min':''):n+' min')})+' (≈'+t12s(x.at)+')':t12s(x.at);return t+(x.day==='tomorrow'?' tomorrow':'')}
+// Short, one-line status: what the tree is doing · when that changes. The full sentence is in the tooltip.
+function whenShort(x){if(!x)return '';var d=x.day&&x.day!=='today'?(x.day==='tomorrow'?'tomorrow ':x.day+' '):'';return d+(x.at?t12s(x.at):'')}
+function renderMode(){var s=Store.status,sc=s&&s.schedule,b=$('modeBadge'),nm=$('modeName'),inf=$('modeInfo');
+ function set(cls,name,short,long){b.className='mode '+cls;var ph=window.innerWidth<520;nm.textContent=name==='ON SCHEDULE'&&ph?'SCHED':name;inf.textContent=(cls==='override'&&ph?'Override · ':'')+short;b.title=(long||short)+(cls==='override'?' Tap to end the override and go back to the schedule.':' (tap for the schedule)')}
+ if(!Store.server)return set('manual','OFFLINE','Not connected to tree-show');
+ if(!sc||!sc.enabled)return set('manual','MANUAL','No schedule · plays only when you press Play','No schedule: the tree only plays when you press Play on tree.');
+ var u=sc.untilInfo,nx=sc.next,what=sc.want==='design'?'“'+(sc.design||'design')+'”':sc.playlist||'playlist',playing=!!(s&&s.playing);
+ if(sc.following){
+  if(sc.want==='off')return nx?set('sched','ON SCHEDULE','Off until '+whenShort(nx)+(nx.what?' → '+nx.what:''),'Off until '+whenTxt(nx)+(nx.what?', then '+nx.what:'')+'.'):set('sched','ON SCHEDULE','Off · nothing else scheduled','Off: nothing else is scheduled.');
+  return set('sched','ON SCHEDULE',what+(u?' until '+whenShort(u):''),what+(u?' until '+whenTxt(u):'')+'.')}
+ if(sc.want!=='off'&&!playing)return set('override','OVERRIDE','Stopped by hand · restarts '+(nx?whenShort(nx):'next time'),'Stopped by hand. The schedule starts the tree again '+(nx?whenTxt(nx)+' ('+nx.what+')':'at its next time')+'.');
+ if(sc.want==='off')return set('override','OVERRIDE','Playing by hand · schedule back '+(nx?whenShort(nx):'next time'),'Playing by hand. The schedule takes over '+(nx?'at '+whenTxt(nx)+' ('+nx.what+')':'at its next time')+'.');
+ return set('override','OVERRIDE','Your pick, not '+what+' · back '+(u?whenShort(u):'next change'),'Playing your choice instead of '+what+'. The schedule takes back over '+(u?'at '+whenTxt(u):'at its next change')+'.')}
+function renderNow(){var s=Store.status,dot=$('nowDot'),name=$('nowName'),left=$('nowLeft');syncBright();renderMode();
+ var sc=s&&s.schedule;$('schNote').textContent='';if(0)$('schNote').textContent=!sc||!sc.enabled?'':sc.want==='off'?'Schedule: off now':'Schedule: “'+(sc.want==='design'?(sc.design||'design'):(sc.playlist||'playlist'))+'” until '+sc.until;
+ $('schBtn').textContent=sc&&sc.enabled?'Schedule · on':'Schedule';
+ $('liveBtn').hidden=!(local.running||tryLook)||!Store.server;
+ if(local.running){var ls=local.status();dot.className='dot prev';name.textContent='Preview: '+(ls.name||'—');left.textContent=fmt(ls.left)}
+ else if(tryLook){dot.className='dot prev';name.textContent='Trying: '+tryLook.name;left.textContent=''}
+ else if(s&&s.playing&&s.player){dot.className='dot play';name.textContent=(s.live?'Live mixer on tree · paused: ':s.player.hold?'Staying on tree: ':'On tree: ')+(s.player.name||'—')+(!s.player.hold&&!s.live&&s.playlistName?' · '+s.playlistName:'');left.textContent=s.player.hold?'':fmt(s.player.left)}
+ else{dot.className='dot';name.textContent=Store.server?'Tree stopped':'Not connected to tree-show';left.textContent=''}
+ var playing=!!(s&&s.playing);
+ var other=playing&&s.activeId&&s.activeId!==Store.playlist.id;
+ playBtn.textContent=tryLook&&!local.running?'Show on tree':other||(playing&&s.player&&s.player.hold)?'Play this playlist':playing?'Stop tree':'Play on tree';
+ var oa=$('plOnAir');oa.hidden=!(playing&&!(s.player&&s.player.hold));if(!oa.hidden){var an=(Store.playlists.find(function(x){return x.id===s.activeId})||{}).name||'';oa.textContent=other?'On the tree now: '+an:'● Playing on the tree'}playBtn.classList.toggle('on-accent',playing&&!(tryLook&&!local.running));
+ var held=!local.running&&playing&&s.player&&s.player.hold;nextBtn.textContent=held?'↩ Playlist':'Next';nextBtn.title=held?'Take the design off and go back to the playlist':'';prevBtn.textContent=local.running?'Stop preview':'Preview';prevBtn.classList.toggle('on-accent',local.running);
+ if(s&&s.wled&&Store.server&&!s.wled.resolved&&!smsg.textContent)say(smsg,'Can’t find WLED at '+s.wled.host+'. Check WLED_HOST.',true);
+ var c=curId();document.querySelectorAll('#plList .row,#dsList .row').forEach(function(r){r.classList.remove('cur')});
+ if(c){[plList,dsList].forEach(function(L){Array.prototype.forEach.call(L.children,function(r,i){var nm=r.querySelector('.nm');if(nm&&getDesign(c)&&nm.title===getDesign(c).name)r.classList.add('cur')})})}}
+
+// ---------------- views ----------------
+function setView(v){app.dataset.view=v;document.body.classList.toggle('booth',v==='mix');segSet('viewSeg',v);document.querySelectorAll('#viewSeg button[data-v]').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.v===v?'true':'false')});
+ if(v!=='mix'&&live)stopLive();if(v==='shows'){renderLists();renderNow()}updateWatch();V=null}
+document.querySelectorAll('#viewSeg button[data-v]').forEach(function(b){b.addEventListener('click',function(){setView(b.dataset.v)})});
+// ---------- settings dialog (tree-show only) ----------
+(function(){
+ var online=false,dlg=$('setDlg'),f={host:$('sHost'),port:$('sPort'),ribs:$('sRibs'),rows:$('sRows'),arc:$('sArc'),top:$('sTop'),map:$('sMap'),flip:$('sFlip'),gamma:$('sGamma'),deskew:$('sDeskew'),topper:$('sTopper'),power:$('sPower'),ttop:$('sTTop'),tsize:$('sTSize'),twidth:$('sTWidth'),dither:$('sDither'),ddark:$('sDitherDark'),fpsAuto:$('sFpsAuto'),fps:$('sFps')},sMsg=$('sMsg'),out=$('wledOut'),note=$('sNote'),cur=null;
+ function vals(){return{wledHost:f.host.value.trim(),wledPort:+f.port.value,ribs:+f.ribs.value,rows:+f.rows.value,arc:+f.arc.value,topStart:+f.top.value,map:f.map.value,flip:f.flip.checked,gamma:+f.gamma.value,deskew:+f.deskew.value,topper:f.topper.checked,wledPower:f.power.checked,textTop:+f.ttop.value,textSize:+f.tsize.value,textWidth:+f.twidth.value,dither:{mode:f.dither.value,darkest:f.ddark.checked,wledFps:$('sDitherFps').value==='auto'?'auto':+$('sDitherFps').value,minHz:+$('sDitherHz').value},fpsAuto:f.fpsAuto.checked,fpsMax:+f.fps.value,mqtt:Object.assign({enabled:$('sMqOn').checked,host:$('sMqHost').value.trim(),port:+$('sMqPort').value||1883,username:$('sMqUser').value.trim(),base:$('sMqBase').value.trim().toLowerCase()||'treeinator'},$('sMqPass').value?{password:$('sMqPass').value}:{})}}
+ function showNote(){var v=vals(),nt=v.ribs*v.rows;note.textContent=(v.map==='matrix'?'WLED needs a 2D matrix '+v.ribs+' wide × '+v.rows+' tall; tree-show sends it row by row from the top left. ':'')+(nt>0?'Tree uses WLED pixels 0–'+(nt-1)+(v.topper?'; topper uses '+v.topStart+'–'+(v.topStart+99)+'. ':'; topper is off, nothing is sent for it. '):'')+(v.topper&&nt>0&&v.topStart>nt?'Pixels '+nt+'–'+(v.topStart-1)+' are sent black. ':'')+(v.textTop+7*v.textSize>v.rows?'Text runs past the bottom of the tree; lower Text position or height. ':'Text covers pixels '+v.textTop+'–'+Math.ceil(v.textTop+7*v.textSize-1)+' from the top. ')+'Changing the layout restarts tree-show.'}
+ Object.keys(f).forEach(function(k){f[k].addEventListener('input',showNote);f[k].addEventListener('change',showNote)});
+ function fill(st){cur=st;f.host.value=st.wledHost;f.port.value=st.wledPort;f.ribs.value=st.ribs;f.rows.value=st.rows;f.arc.value=st.arc;f.top.value=st.topStart;f.map.value=st.map||'strip';f.flip.checked=!!st.flip;f.gamma.value=st.gamma==null?2.8:st.gamma;f.deskew.value=st.deskew==null?100:st.deskew;f.topper.checked=st.topper!==false;f.power.checked=st.wledPower!==false;f.ttop.value=st.textTop==null?5:st.textTop;f.tsize.value=st.textSize==null?2.5:st.textSize;f.twidth.value=st.textWidth==null?1:st.textWidth;f.dither.value=(st.dither||{}).mode||'off';f.ddark.checked=!!(st.dither||{}).darkest;$('sDitherHz').value=String((st.dither||{}).minHz||0);$('sDitherFps').value=String((st.dither||{}).wledFps==null?'auto':st.dither.wledFps);if(!$('sDitherFps').value)$('sDitherFps').value='auto';syncDitherUi();f.fpsAuto.checked=st.fpsAuto!==false;f.fps.value=st.fpsMax||60;var mq=st.mqtt||{};$('sMqOn').checked=!!mq.enabled;$('sMqHost').value=mq.host||'';$('sMqPort').value=mq.port||1883;$('sMqUser').value=mq.username||'';$('sMqBase').value=mq.base||'treeinator';$('sMqPass').value='';$('sMqPass').placeholder=mq.passwordSet?'saved \u00b7 type to change':'';showNote()}
+ var WLED_DITHER;
+ function syncDitherUi(){var w=f.dither.value==='wled';$('sDitherFpsL').hidden=!w;$('sDitherHzL').hidden=!w;$('sWledDither').hidden=!w;
+  $('sWledDither').textContent=WLED_DITHER===undefined?'WLED hasn\u2019t been checked yet (it is checked while the tree plays).':WLED_DITHER?'WLED has it ('+WLED_DITHER.fw+(WLED_DITHER.on?', on, '+WLED_DITHER.rate+' refreshes/s'+(WLED_DITHER.ledMax?', the LEDs allow up to '+WLED_DITHER.ledMax:''):', off')+').'+(WLED_DITHER.fw==='dither1'?' Update WLED from Lickety Split for the automatic refresh rate.':'')+'':'This WLED doesn\u2019t have it yet: install the WLED (ESP32) build from Lickety Split.'}
+ f.dither.addEventListener('change',syncDitherUi);
+ function showMqtt(ms){ms=ms||{};$('sMqNote').textContent={off:'Not connected (turned off).',connecting:'Connecting\u2026',connected:'Connected. Find it in Home Assistant under Settings \u2192 Devices & services \u2192 MQTT.',error:'Couldn\u2019t connect: '+(ms.error||'unknown error')}[ms.state]||''}
+ function wledLinks(){var box=$('sWledLinks'),host=f.host.value.trim();box.innerHTML='';if(!/^[A-Za-z0-9.-]+(:\d+)?$/.test(host))return;
+  [['WLED main page \u2197','/'],['WLED setup \u2197','/settings']].forEach(function(x){var a=document.createElement('a');a.href='http://'+host+x[1];a.target='_blank';a.rel='noopener';a.textContent=x[0];a.title='Opens '+a.href+' in a new tab';box.appendChild(a)})}
+ f.host.addEventListener('input',wledLinks);
+ function showFps(fr){fr=fr||{};$('sFpsNote').textContent='Sending '+(fr.sending||0)+' fps now'+(fr.wled!=null?'; WLED shows '+fr.wled+'.':'.')+(f.fpsAuto.checked?' Automatic: follows what WLED can show, up to the maximum.':' Set it to about what WLED\u2019s info page shows.')}
+ function setTab(t){document.querySelectorAll('#sTabs button').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.t===t?'true':'false')});document.querySelectorAll('#setForm fieldset[data-tab]').forEach(function(x){x.hidden=x.dataset.tab!==t});try{localStorage.setItem('treeSetTab',t)}catch(e){}}
+ document.querySelectorAll('#sTabs button').forEach(function(b){b.addEventListener('click',function(){setTab(b.dataset.t)})});
+ (function(){var t='wled';try{t=localStorage.getItem('treeSetTab')||'wled'}catch(e){}if(!document.querySelector('#sTabs button[data-t="'+t+'"]'))t='wled';setTab(t)})();
+ $('setBtn').addEventListener('click',function(){
+  say(sMsg,'');out.hidden=true;
+  fetch('api/settings',{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){online=true;$('sSave').disabled=false;WLED_DITHER=j.wledDither;fill(j.settings);showFps(j.frameRate);showMqtt(j.mqtt);wledLinks();dlg.showModal()})
+   .catch(function(){online=false;$('sSave').disabled=true;say(sMsg,'Settings live on tree-show. This copy of the page isn’t connected to it.',true);fill(Object.assign({wledHost:'',wledPort:4048},E.CONFIG));dlg.showModal()})});
+ $('sCancel').addEventListener('click',function(){dlg.close()});
+ $('sWledSetup').addEventListener('click',function(){if(!online)return;var b=this;b.disabled=true;out.hidden=false;out.textContent='Setting up WLED… (it may restart, about 10 seconds)';
+  fetch('api/wled/setup',{method:'POST'}).then(function(r){return r.json()}).then(function(j){b.disabled=false;
+   out.textContent=j.ok?'Done. WLED now starts up off and goes dark when tree-show stops sending.'+(j.wasBootPreset?' It used to start with preset '+j.wasBootPreset+', which is still saved.':''):(j.error||'Something went wrong.')+(j.boot===false?' The startup setting wasn’t changed.':'')+(j.black===false?' Its look isn’t black yet.':'')})
+  .catch(function(){b.disabled=false;out.textContent='Couldn’t ask tree-show to set up WLED.'})});
+ $('sCheck').addEventListener('click',function(){
+  var h=f.host.value.trim();out.hidden=false;out.textContent='Asking '+h+'…';
+  fetch('api/wled?host='+encodeURIComponent(h),{cache:'no-store'}).then(function(r){return r.json()}).then(function(w){
+   if(!w.ok){out.textContent='Couldn’t reach '+(w.host||h)+': '+(w.error||'no answer');return}
+   var lines=[(w.name||'WLED')+' '+(w.version||'')+' at '+(w.ip||w.host),w.count+' LEDs configured'+(w.realtime?'':' · UDP realtime is OFF (turn it on in Sync settings)')+(w.live?' · receiving live data'+(w.liveSource?' from '+w.liveSource:''):'')];
+   (w.outputs||[]).forEach(function(o,i){lines.push('LED'+(i+1)+' · GPIO '+o.pin+' · start '+o.start+' · length '+o.len+' · ends '+(o.start+o.len-1))});
+   var mx=w.matrix&&w.matrix.w&&w.matrix.h;
+   if(mx)lines.push('2D matrix '+w.matrix.w+' wide × '+w.matrix.h+' tall'+(w.ledMaps?' · realtime uses it → set WLED mapping to 2D matrix':' · realtime ignores it (“respect LED maps” off) → use Strip order'));
+   else lines.push('No 2D matrix → use Strip order');
+   if(w.boot)lines.push('Starts up with '+(w.boot.ps?'preset '+w.boot.ps+' → use Set up WLED for tree-show':'no preset')+(w.boot.on===false?', off (set up)':', on'));
+   lines.push('WLED realtime gamma is '+(w.realtimeGamma?'ON → set Gamma here to 1':'OFF → keep Gamma here at about 2.8'));
+   if(mx&&w.ledMaps&&f.map.value!=='matrix'){f.map.value='matrix';f.ribs.value=w.matrix.w;f.rows.value=w.matrix.h;showNote();lines.push('(Filled in 2D matrix '+w.matrix.w+'×'+w.matrix.h+' below. Press Save to use it.)')}
+   out.textContent=lines.join('\n')}).catch(function(){out.textContent='Couldn’t ask tree-show to check WLED.'})});
+ $('setForm').addEventListener('submit',function(ev){
+  ev.preventDefault();if(!online)return;var v=vals();
+  if(v.topStart<v.ribs*v.rows){say(sMsg,'Topper start must be '+(v.ribs*v.rows)+' or more, after the tree.',true);f.top.focus();return}
+  $('sSave').disabled=true;say(sMsg,'Saving…');
+  Store.api('PUT','api/settings',v).then(function(j){
+   if(!j.restart){$('sSave').disabled=false;dlg.close();say(msg,'Settings saved. Sending to '+j.settings.wledHost+'.');return}
+   say(sMsg,'Saved. Restarting tree-show with the new layout…');
+   var tries=0;(function wait(){setTimeout(function(){fetch('health',{cache:'no-store'}).then(function(r){if(r.ok)location.reload();else throw 0}).catch(function(){if(++tries<30)wait();else{$('sSave').disabled=false;say(sMsg,'tree-show hasn’t come back. Check: journalctl -u tree-show',true)}})},tries?1000:2500)})()
+  }).catch(function(e){$('sSave').disabled=false;say(sMsg,e.message,true)})});
+})();
+document.querySelectorAll('#subtabs button').forEach(function(b){b.addEventListener('click',function(){app.dataset.sub=b.dataset.s;document.querySelectorAll('#subtabs button').forEach(function(o){o.setAttribute('aria-pressed',o===b?'true':'false')})})});
+
+// ---------------- drawing ----------------
+var cv=$('view'),V=null,beats=Array.prototype.slice.call(document.querySelectorAll('.beat i')),srcEl=$('src');
+function fit(){var b=cv.parentNode,W=b.clientWidth-16,H=b.clientHeight-34;return Math.max(60,Math.floor(Math.min(W,H/TREE_AR)))}
+function setup(){var d=window.devicePixelRatio||1,w=fit(),h=Math.round(w*TREE_AR);cv.style.width=w+'px';cv.style.height=h+'px';cv.width=w*d;cv.height=h*d;var x=cv.getContext('2d');x.setTransform(d,0,0,d,0,0);V={x:x,w:w,h:h}}
+var ORDER=[];for(var k=0;k<E.NT;k++)ORDER.push(k);ORDER.sort(function(a,b){return E.PX[a].depth-E.PX[b].depth});
+function css(r,g,b,k){return'rgb('+Math.min(255,Math.round(r*k))+','+Math.min(255,Math.round(g*k))+','+Math.min(255,Math.round(b*k))+')'}
+function draw(buf){if(!V)setup();paint(V,buf)}
+// The tree is always drawn in a 200×350 box scaled evenly and centered, so it keeps its shape on every canvas.
+var TREE_AR=1.75;
+function paint(V,buf){var x=V.x,w=V.w,h=V.h,s=Math.min(w/200,h/350),cx=w/2,oy=(h-350*s)/2;x.clearRect(0,0,w,h);
+ var hubY=oy+118*s,ringY=oy+338*s,botW=88*s,topW=botW*E.TOPW,dot=Math.max(1.3,1.9*s);
+ x.fillStyle='#1a1f2a';x.fillRect(cx-2*s,hubY,4*s,ringY-hubY);
+ for(var i=0;i<E.NT;i++){var k=ORDER[i],p=E.PX[k],dp=p.depth,dim=dp<0?0.25+0.25*(1+dp):0.75+0.25*dp;var X=cx+(topW+(botW-topW)*p.u)*(p.x/(E.TOPW+(1-E.TOPW)*p.u)),Y=hubY+p.u*(ringY-hubY);
+  x.fillStyle=css(buf[k*3],buf[k*3+1],buf[k*3+2],dim);x.beginPath();x.arc(X,Y,dot,0,7);x.fill()}
+ var tcY=oy+58*s,ts=5*s;x.fillStyle='#1a1f2a';x.fillRect(cx-1.2*s,tcY,2.4*s,hubY-tcY);
+ for(k=E.NT;k<(E.CONFIG.topper?N:E.NT);k++){var tp=E.PX[k].tp;x.fillStyle=css(buf[k*3],buf[k*3+1],buf[k*3+2],1);x.beginPath();x.arc(cx+tp.x*ts,tcY+tp.y*ts,Math.max(1.4,2*s),0,7);x.fill()}}
+
+// ---------------- DJ booth: deck monitors, meters, on-air ----------------
+var DM=[0,1].map(function(d){var sec=document.querySelector('.deck[data-deck="'+d+'"]');return{cv:sec.querySelector('.deckcv'),vu:sec.querySelector('.vu i'),led:sec.querySelector('.monk .led'),air:sec.querySelector('.onair'),buf:new Float32Array(N*3),V:null}});
+function monSetup(m){var d=window.devicePixelRatio||1,box=m.cv.parentNode,hMax=window.innerWidth<900&&window.innerHeight<700?130:170,w=Math.max(40,Math.min(110,Math.floor(box.clientWidth-50),Math.floor(hMax/TREE_AR))),h=Math.round(w*TREE_AR);m.bw=box.clientWidth;m.cv.style.width=w+'px';m.cv.style.height=h+'px';m.cv.width=w*d;m.cv.height=h*d;var x=m.cv.getContext('2d');x.setTransform(d,0,0,d,0,0);m.V={x:x,w:w,h:h}}
+function level(b){var s=0;for(var i=0;i<E.NT*3;i+=9)s+=b[i]+b[i+1]+b[i+2];return Math.min(1,s/(E.NT/3*3*255)*2.2)}
+function booth(master){
+ var L=M.look,rc={tA:M.run.tA,tB:M.run.tB,beat:M.run.beat,xf:0},xf=M.run.xf==null?(L.xf||0):M.run.xf;
+ var looks=[{A:L.A,B:L.A,xf:0,auto:0,bpm:L.bpm,top:L.top,tc:L.tc,img:L.img},{A:L.B,B:L.B,xf:1,auto:0,bpm:L.bpm,top:L.top,tc:L.tc,img:L.img}];
+ if(L.img)looks.forEach(function(l){try{Object.defineProperty(l,'_img',{value:M.img,enumerable:false,configurable:true})}catch(e){}});
+ DM.forEach(function(m,d){var sec=m.cv.closest('.deck');if(sec.offsetParent===null)return;if(!m.V||m.bw!==m.cv.parentNode.clientWidth)monSetup(m);
+  E.render(looks[d],{tA:rc.tA,tB:rc.tB,beat:rc.beat,xf:0},0,m.buf);paint(m.V,m.buf);
+  var share=d?xf:1-xf;m.vu.style.height=Math.round(level(m.buf)*100)+'%';m.air.style.opacity=(0.12+0.88*share).toFixed(2);
+  m.led.classList.toggle('on',Math.floor(M.run.beat)%2===d)});
+ var st=cv.parentNode;st.classList.toggle('live',!!live);var nar=st.clientWidth<220;$('stageTag').textContent=live?(nar?'● ON AIR':'● ON AIR → TREE'):(nar?'TREE':'TREE · NOW')}
+window.addEventListener('resize',function(){DM.forEach(function(m){m.V=null})});
+
+// Invert pad: the same look with each deck's (and the topper's) Color 1 and Color 2 traded, so only the design's colors show.
+function swapped(L){var o=Object.assign({},L);['A','B'].forEach(function(k){if(L[k]&&L[k].c)o[k]=Object.assign({},L[k],{c:[L[k].c[1],L[k].c[0]]})});if(L.tc)o.tc=[L.tc[1],L.tc[0]];if(L._img)try{Object.defineProperty(o,'_img',{value:L._img,enumerable:false})}catch(e){}return o}
+
+// ---------------- main loop ----------------
+var last=performance.now(),idle=new Float32Array(N*3),lastStatusDraw=0;
+function loop(){var n=performance.now(),dt=Math.min(0.1,(n-last)/1000);last=n;var src='',beat=null;
+ if(app.dataset.view==='mix'){
+  swapStep();E.render(M.pad.invert?swapped(M.look):M.look,M.run,dt,frame);beat=M.run.beat; // Invert = swap each deck's two colors
+  // Sir Mix-a-Lot pads are instant (Flash, Strobe at 1/8 beat, Black, Invert): live-mixing tools, on purpose
+  if(!M.pad.flash)M.flashLvl=Math.max(0,M.flashLvl-dt*4);var strobeOff=M.pad.strobe&&Math.floor(M.run.beat*8)%2===1;
+  for(var i=0;i<N*3;i+=3){var r=frame[i],g=frame[i+1],b=frame[i+2];if(M.flashLvl>0){r+=(255-r)*M.flashLvl;g+=(255-g)*M.flashLvl;b+=(255-b)*M.flashLvl}if(strobeOff||M.pad.black||M.blackout){r=g=b=0}
+   view[i]=r*M.bright;view[i+1]=g*M.bright;view[i+2]=b*M.bright}
+  pushLive();
+  // Stage = what the tree really shows: your mix while you're live, otherwise the live feed from tree-show
+  if(live){draw(view);src='On air: your mix → tree'}
+  else if(watching){draw(mirror);src=n-mirrorAt<1500?'Tree now · Go live to send your mix':'Waiting for the tree…'}
+  else{draw(idle);src=Store.server?'Tree stopped · Go live to send your mix':'Not connected to tree-show'}
+  booth(view);
+ }else if(local.running){local.step(dt,frame);draw(frame);src='Playlist preview';beat=local.cur?local.cur.run.beat:null}
+ else if(tryLook){E.render(tryLook.look,tryRun,dt,frame);draw(frame);src='Trying design';beat=tryRun.beat}
+ else if(watching){draw(mirror);src=n-mirrorAt<1500?'Live view of the tree':'Waiting for the tree…'}
+ else{draw(idle);src=Store.server?'Tree stopped':'Preview'}
+ srcEl.textContent=src;
+ if(ED.open){E.render(ED.d.look,ED.run,dt,ED.frame);paint(ED.V,ED.frame)}
+ var bi=beat==null?-1:Math.floor(beat)%4;beats.forEach(function(e,j){e.classList.toggle('on',j===bi&&(beat%1)<0.5)});
+ if(app.dataset.view==='shows'&&n-lastStatusDraw>500){lastStatusDraw=n;if(local.running)renderNow()}}
+window.addEventListener('resize',function(){V=null});if(window.ResizeObserver)new ResizeObserver(function(){V=null}).observe(cv.parentNode);
+
+// ---------------- playlists ----------------
+function fillPlSel(){var sel=$('plSel');sel.innerHTML='';Store.playlists.forEach(function(pl){var o=document.createElement('option');o.value=pl.id;o.textContent=pl.name+' ('+pl.items.length+')'+(pl.id===Store.activeId&&Store.status&&Store.status.playing?' ●':'');sel.appendChild(o)});sel.value=Store.playlist.id;
+ ['plNew','plRen','plCopy','plDel'].forEach(function(id){$(id).disabled=!Store.server});$('plDel').disabled=!Store.server||Store.playlists.length<2}
+function selectPl(id){var pl=Store.playlists.find(function(x){return x.id===id});if(!pl)return;Store.playlist=pl;try{localStorage.setItem('treeSelPl',id)}catch(e){}
+ if(local.running)local.stop();local.setPlaylist(pl);syncOpts();renderLists();renderNow();fillPlSel()}
+$('plSel').addEventListener('change',function(){selectPl(this.value)});
+function plSaved(j){Store.playlists=j.playlists;Store.activeId=j.activeId}
+function askName(q,def){var n=window.prompt(q,def||'');if(n==null)return null;n=n.trim().slice(0,50);if(!n){say(smsg,'A playlist needs a name.',true);return null}return n}
+$('plNew').addEventListener('click',function(){var n=askName('Name for the new playlist:','');if(!n)return;var id='p-'+Date.now().toString(36);
+ Store.api('PUT','api/playlists/'+id,{name:n,items:[],mode:'shuffle',fade:3,randSec:60}).then(function(j){plSaved(j);selectPl(id);say(smsg,'Made “'+n+'”. Add designs from the Designs list with +.')}).catch(function(e){say(smsg,e.message,true)})});
+$('plRen').addEventListener('click',function(){var pl=Store.playlist,n=askName('New name for “'+pl.name+'”:',pl.name);if(!n)return;
+ Store.api('PUT','api/playlists/'+encodeURIComponent(pl.id),Object.assign({},pl,{name:n})).then(function(j){plSaved(j);selectPl(pl.id);say(smsg,'Renamed to “'+n+'”.')}).catch(function(e){say(smsg,e.message,true)})});
+$('plCopy').addEventListener('click',function(){var pl=Store.playlist,n=askName('Name for the copy:',pl.name+' copy');if(!n)return;var id='p-'+Date.now().toString(36);
+ Store.api('PUT','api/playlists/'+id,Object.assign({},pl,{id:id,name:n,items:pl.items.map(function(it){return{id:it.id,sec:it.sec}})})).then(function(j){plSaved(j);selectPl(id);say(smsg,'Copied to “'+n+'”.')}).catch(function(e){say(smsg,e.message,true)})});
+$('plDel').addEventListener('click',function(){var pl=Store.playlist;if(!window.confirm('Delete the playlist “'+pl.name+'”? The designs in it are kept.'))return;
+ Store.api('DELETE','api/playlists/'+encodeURIComponent(pl.id)).then(function(j){plSaved(j);selectPl(Store.activeId);say(smsg,'Deleted “'+pl.name+'”.')}).catch(function(e){say(smsg,e.message,true)})});
+
+// ---------------- calibration ----------------
+// Sends test frames to the tree through the normal mapping (E.toWled, so 2D matrix / flip / topper start all apply) over
+// the live channel, about 10 a second. The playlist pauses while they arrive and resumes 1.5 s after Done.
+(function(){
+ var dlg=$('calDlg'),cv=$('calCv'),buf=new Float32Array(N*3),wb=new Uint8Array(E.WN*3),CV=null,timer=0,autoT=0,t0=0,NR=E.NR,ROWS=E.NT/E.NR;
+ var mode=$('calMode'),ribI=$('calRib'),rowI=$('calRow');
+ ribI.max=NR;rowI.max=ROWS;
+ function ribHue(i){return E.hex(['#ff0000','#ff8000','#ffff00','#00ff00','#00ffff','#0060ff','#a000ff','#ff00a0','#ffffff'][i%9])}
+ function set(k,c){buf[k*3]=c[0];buf[k*3+1]=c[1];buf[k*3+2]=c[2]}
+ function idx(rib,row){return rib*ROWS+row}
+ function wl(k){return E.WIDX[k]}
+ function build(t){
+  buf.fill(0);var m=mode.value,rib=Math.min(NR,Math.max(1,+ribI.value||1))-1,row=Math.min(ROWS,Math.max(1,+rowI.value||1))-1,blink=Math.floor(t*2)%2===0,what='',ix='',legend=false;
+  if(m==='rib'){for(var r=0;r<ROWS;r++)set(idx(rib,r),r<3?[255,0,0]:r>=ROWS-3?[0,255,0]:[70,70,70]);
+   var run=Math.floor(t*12)%ROWS;set(idx(rib,ROWS-1-run),[255,255,255]);
+   what='Rib '+(rib+1)+' of '+NR+' should light, counting from the left as seen from the street'+(E.CONFIG.arc<360?' (rib 1 is leftmost)':'')+'. Red at the top, green at the bottom, and a white dot climbing from bottom to top. Nothing else should be lit.';
+   ix='WLED pixels: top '+wl(idx(rib,0))+', bottom '+wl(idx(rib,ROWS-1))}
+  else if(m==='ribs'){for(var i=0;i<NR;i++)for(r=0;r<ROWS;r++)set(idx(i,r),r===ROWS-1&&blink?[255,255,255]:ribHue(i).map(function(v){return v*0.6}));legend=true;
+   what='Each rib its own color, repeating red, orange, yellow, green, cyan, blue, purple, pink, white from the left. The bottom pixel of every rib blinks white. Check the colors run in order with no rib split or swapped.'}
+  else if(m==='row'){for(i=0;i<NR;i++)set(idx(i,row),[255,255,255]);for(i=0;i<NR;i++){if(row>0)set(idx(i,row-1),[0,0,90]);if(row<ROWS-1)set(idx(i,row+1),[0,0,90])}
+   what='Row '+(row+1)+' of '+ROWS+' should be a white ring at the same height on every rib, with dim blue just above and below. A rib whose white pixel is higher or lower is shifted or reversed.';
+   ix='WLED pixels on rib 1: '+wl(idx(0,row))+', rib '+NR+': '+wl(idx(NR-1,row))}
+  else if(m==='halves'){var mid=(NR-1)/2;for(i=0;i<NR;i++)for(r=0;r<ROWS;r++)set(idx(i,r),i<mid-0.1?[160,0,0]:i>mid+0.1?[0,160,0]:[0,0,200]);
+   what='Left half red, right half green as seen from the street'+(NR%2?', middle rib blue':'')+'. If it’s the other way round, turn on Flip left/right in Settings.'}
+  else if(m==='pixel'){set(idx(rib,row),blink?[255,255,255]:[255,0,0]);
+   what='Only rib '+(rib+1)+', row '+(row+1)+' (from the top) should blink white and red.';ix='WLED pixel '+wl(idx(rib,row))}
+  else if(m==='topper'){if(!E.CONFIG.topper){what='The topper is turned off in Settings, so nothing is sent for it.'}
+   else{var RC=[[255,0,0],[0,255,0],[0,80,255],[255,255,0]],n=0;E.TOPPX.forEach(function(tp,k){set(E.NT+k,k===n?[255,255,255]:RC[tp.ri]);if(k===n)n+=[10,20,30,40][tp.ri]});
+    what='Topper rings from the center out: red, green, blue, yellow. The first pixel of each ring (12 o’clock) is white, and the rings should go clockwise from there.';ix='WLED pixels '+E.TOP_START+'–'+(E.TOP_START+99)}}
+  else if(m==='white'){for(i=0;i<N;i++)if(i<E.NT||E.CONFIG.topper)set(i,[60,60,60]);what='Everything dim white. Look for dark pixels, wrong colors or flicker (wiring or power), and for colors drifting toward red or orange at the far ends (power).'}
+  else{what='Everything off. Anything lit now isn’t coming from tree-show: check wiring, power and WLED.'}
+  $('calWhat').textContent=what;$('calIdx').textContent=ix;
+  var lg=$('calLegend');lg.hidden=!legend;if(legend&&!lg.children.length)for(i=0;i<NR;i++){var c=ribHue(i),sp=document.createElement('span');sp.textContent=i+1;sp.style.background='rgb('+c.join(',')+')';lg.appendChild(sp)}
+  $('calRibStep').hidden=!(m==='rib'||m==='pixel');$('calRowStep').hidden=!(m==='row'||m==='pixel')}
+ function tick(){var t=(performance.now()-t0)/1000;
+  if($('calAuto').checked&&t-autoT>2){autoT=t;step(1)}
+  build(t);flat(CV,buf);
+  if(ws&&ws.readyState===1&&ws.bufferedAmount<20000)ws.send(E.toWled(buf,1,wb));else say($('calMsg'),'Not connected to tree-show, so nothing reaches the tree.',true)}
+ // Flat view for calibration: ribs as columns left to right (as seen from the street), row 1 at the top, topper above.
+ function flat(V,b){var x=V.x,w=V.w,h=V.h,top=E.CONFIG.topper?Math.round(h*0.22):8,gx=(w-16)/NR,gy=(h-top-22)/ROWS,r=Math.max(1,Math.min(gx,gy)*0.38);x.clearRect(0,0,w,h);
+  for(var i=0;i<NR;i++){for(var rr=0;rr<ROWS;rr++){var k=i*ROWS+rr,c=[b[k*3],b[k*3+1],b[k*3+2]],on=c[0]+c[1]+c[2]>0;x.fillStyle=on?'rgb('+c.map(Math.round).join(',')+')':'#1c2430';x.beginPath();x.arc(8+gx*(i+0.5),top+gy*(rr+0.5),on?r*1.25:r,0,7);x.fill()}
+   if(i===0||(i+1)%5===0||i===NR-1){x.fillStyle='#8796a8';x.font='9px ui-monospace,monospace';x.textAlign='center';x.fillText(String(i+1),8+gx*(i+0.5),h-8)}}
+  if(E.CONFIG.topper){var cx=w/2,cy=top/2,sc=(top/2-4)/9.6;E.TOPPX.forEach(function(tp,j){var k=E.NT+j,c=[b[k*3],b[k*3+1],b[k*3+2]],on=c[0]+c[1]+c[2]>0;x.fillStyle=on?'rgb('+c.map(Math.round).join(',')+')':'#1c2430';x.beginPath();x.arc(cx+tp.x*sc,cy+tp.y*sc,Math.max(1,sc*0.9),0,7);x.fill()})}}
+ function step(d){var m=mode.value;if(m==='row'){rowI.value=((+rowI.value-1+d+ROWS)%ROWS)+1}else{ribI.value=((+ribI.value-1+d+NR)%NR)+1}}
+ $('calRibPrev').addEventListener('click',function(){ribI.value=((+ribI.value-2+NR)%NR)+1});$('calRibNext').addEventListener('click',function(){ribI.value=(+ribI.value%NR)+1});
+ $('calRowPrev').addEventListener('click',function(){rowI.value=((+rowI.value-2+ROWS)%ROWS)+1});$('calRowNext').addEventListener('click',function(){rowI.value=(+rowI.value%ROWS)+1});
+ mode.addEventListener('change',function(){autoT=(performance.now()-t0)/1000});
+ function open(){if(!Store.server){say(smsg,'Calibration sends to the tree, so open this page from tree-show.',true);return}
+  if(live)stopLive();ribI.value=ribI.value||1;rowI.value=rowI.value||1;
+  var d=window.devicePixelRatio||1,w=window.matchMedia('(max-width:600px)').matches?120:180,h=Math.round(w*1.75);cv.style.width=w+'px';cv.style.height=h+'px';cv.width=w*d;cv.height=h*d;var x=cv.getContext('2d');x.setTransform(d,0,0,d,0,0);CV={x:x,w:w,h:h};
+  say($('calMsg'),'Sending test patterns to the tree. The playlist pauses until you press Done.');t0=performance.now();autoT=0;clearInterval(timer);timer=setInterval(tick,100);tick();dlg.showModal()}
+ function close(){clearInterval(timer);timer=0;if(dlg.open)dlg.close();say(smsg,'Calibration done. The tree goes back to what it was doing.')}
+ $('sCal').addEventListener('click',function(){$('setDlg').close();open()});
+ $('calDone').addEventListener('click',close);dlg.addEventListener('cancel',function(ev){ev.preventDefault();close()});
+})();
+
+// ---------------- schedule ----------------
+(function(){
+ var dlg=$('schDlg'),list=$('schList'),sm=$('schMsg'),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+ function whatOpts(sel,val){sel.innerHTML='';if(val==='playlist')val='playlist:'+Store.activeId;var pg=document.createElement('optgroup');pg.label='Play a playlist';
+  Store.playlists.forEach(function(pl){var o=document.createElement('option');o.value='playlist:'+pl.id;o.textContent=pl.name;pg.appendChild(o)});sel.appendChild(pg);
+  var g=document.createElement('optgroup');g.label='Keep one design on the tree';Store.designs.slice().sort(function(a,b){return a.name.localeCompare(b.name)}).forEach(function(d){var x=document.createElement('option');x.value='design:'+d.id;x.textContent=d.name;g.appendChild(x)});sel.appendChild(g);sel.value=val||'playlist:'+Store.activeId;if(!sel.value)sel.value='playlist:'+Store.playlists[0].id}
+ var SUNEV=[['time','Time'],['sunset','Sunset'],['dusk','Dusk'],['sunrise','Sunrise'],['dawn','Dawn']],SUN=null;
+ function offOpts(sel,v){sel.innerHTML='';for(var m=-360;m<=360;m+=15){var o=document.createElement('option'),a=Math.abs(m),t=(Math.floor(a/60)?Math.floor(a/60)+' h':'')+(a%60?(Math.floor(a/60)?' ':'')+a%60+' min':'');o.value=m;o.textContent=m===0?'on time':(m<0?'−':'+')+t;sel.appendChild(o)}sel.value=String(v)}
+ function fmtM(m){m=((m%1440)+1440)%1440;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')}
+ function when(spec){ // a clock time, or sunrise/sunset/dawn/dusk with an offset
+  var w=el('div',{'class':'when'}),k=el('select',{'aria-label':'Kind of time'}),tm=el('input',{type:'time','aria-label':'Time'}),off=el('select',{'aria-label':'Offset'}),hint=el('small',{});
+  SUNEV.forEach(function(x){var o=document.createElement('option');o.value=x[0];o.textContent=x[1];k.appendChild(o)});
+  var m=/^(sunrise|sunset|dawn|dusk)([+-]\d+)?$/.exec(spec||'');if(m){k.value=m[1];offOpts(off,Math.round((+m[2]||0)/15)*15);tm.value='17:00'}else{k.value='time';tm.value=spec||'17:00';offOpts(off,0)}
+  function upd(){var sun=k.value!=='time';tm.hidden=sun;off.hidden=!sun;hint.textContent=sun?(SUN&&SUN[k.value]?'≈ '+fmtM(+SUN[k.value].slice(0,2)*60+ +SUN[k.value].slice(3)+ +off.value)+' today':'set your location'):''}
+  k.addEventListener('change',upd);off.addEventListener('change',upd);w._upd=upd;
+  w.appendChild(k);w.appendChild(tm);w.appendChild(off);w.appendChild(hint);upd();
+  w._val=function(){if(k.value==='time')return tm.value;var o=+off.value;return k.value+(o?(o>0?'+':'')+o:'')};return w}
+ function updAll(){list.querySelectorAll('.when').forEach(function(w){w._upd()})}
+ function showSun(sun){SUN=sun;$('schSun').textContent=sun?'Today: dawn '+(sun.dawn||'–')+' · sunrise '+(sun.sunrise||'–')+' · sunset '+(sun.sunset||'–')+' · dusk '+(sun.dusk||'–')+(SUN_EST?' (estimated; Save to confirm)':''):'Set your location to use sunrise, sunset, dawn and dusk.';updAll()}
+ var SUN_EST=false;
+ // rough local estimate for the hint before saving a new location (server confirms on save)
+ function estimateSun(lat,lon){var d=new Date(),rad=Math.PI/180,N=Math.floor((new Date(d.getFullYear(),d.getMonth(),d.getDate(),12)-new Date(d.getFullYear(),0,0))/864e5),o={};
+  [['dawn',96,1],['sunrise',90.833,1],['sunset',90.833,0],['dusk',96,0]].forEach(function(x){var lh=lon/15,t=N+((x[2]?6:18)-lh)/24,M=0.9856*t-3.289,L=(M+1.916*Math.sin(M*rad)+0.02*Math.sin(2*M*rad)+282.634+720)%360,RA=(Math.atan(0.91764*Math.tan(L*rad))/rad+720)%360;RA=(RA+Math.floor(L/90)*90-Math.floor(RA/90)*90)/15;
+   var sd=0.39782*Math.sin(L*rad),cd=Math.cos(Math.asin(sd)),cH=(Math.cos(x[1]*rad)-sd*Math.sin(lat*rad))/(cd*Math.cos(lat*rad));if(cH>1||cH<-1){o[x[0]]=null;return}
+   var H=(x[2]?360-Math.acos(cH)/rad:Math.acos(cH)/rad)/15,UT=((H+RA-0.06571*t-6.622-lh)%24+24)%24,tz=-new Date(d.getFullYear(),d.getMonth(),d.getDate(),12).getTimezoneOffset();o[x[0]]=fmtM(Math.round(UT*60+tz))});return o}
+ function locChanged(){var la=$('schLat').value,lo=$('schLon').value;if(la!==''&&lo!==''&&Math.abs(+la)<=90&&Math.abs(+lo)<=180){SUN_EST=true;showSun(estimateSun(+la,+lo))}}
+ $('schLat').addEventListener('input',locChanged);$('schLon').addEventListener('input',locChanged);
+ $('schGeo').addEventListener('click',function(){if(!navigator.geolocation){say(sm,'This browser can’t share its location. Type the latitude and longitude instead.',true);return}say(sm,'Finding your location…');
+  navigator.geolocation.getCurrentPosition(function(p){$('schLat').value=p.coords.latitude.toFixed(4);$('schLon').value=p.coords.longitude.toFixed(4);locChanged();say(sm,'Location filled in. Press Save to keep it.')},function(e){say(sm,'Couldn’t get your location ('+(e.message||'denied')+'). Type it instead, for example from a map app.',true)},{timeout:10000})});
+ function row(e){var r=el('div',{'class':'sw'}),days=el('div',{'class':'days'});
+  DAYS.forEach(function(n,i){var b=el('button',{type:'button',text:n,'aria-pressed':e.days.indexOf(i)>=0?'true':'false',onclick:function(){b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')==='true'?'false':'true')}});b.dataset.d=i;days.appendChild(b)});
+  var st=when(e.start),en=when(e.end),wh=el('select',{});whatOpts(wh,e.what);
+  var rp=el('select',{'aria-label':'Repeat'}),dt=el('input',{type:'date','aria-label':'From date'}),dt2=el('input',{type:'date','aria-label':'To date'}),tol=el('span',{'class':'k',text:'to'}),yr=el('input',{type:'checkbox'}),yrl=el('label',{'class':'chk'},[yr,document.createTextNode('Every year')]);
+  [['week','Every week on'],['date','On dates']].forEach(function(x){var o=document.createElement('option');o.value=x[0];o.textContent=x[1];rp.appendChild(o)});
+  rp.value=e.date?'date':'week';var td=new Date();dt.value=e.date||(td.getFullYear()+'-12-24');dt2.value=e.dateTo||e.date||dt.value;yr.checked=!!e.yearly;
+  dt.addEventListener('change',function(){if(!dt2.value||dt2.value<dt.value&&!yr.checked)dt2.value=dt.value});
+  function repUpd(){var on=rp.value==='date';days.hidden=on;dt.hidden=dt2.hidden=tol.hidden=!on;yrl.hidden=!on;r.classList.toggle('dated',on)}rp.addEventListener('change',repUpd);
+  r.appendChild(el('div',{'class':'rep'},[el('b',{'class':'num'}),rp,days,dt,tol,dt2,yrl]));repUpd();
+  r.appendChild(el('label',{},[document.createTextNode('From'),st]));r.appendChild(el('label',{},[document.createTextNode('To'),en]));
+  r.appendChild(el('label',{'class':'what'},[document.createTextNode('What'),wh]));
+  r.appendChild(el('div',{'class':'mv'},[
+   el('button',{type:'button','class':'ic','aria-label':'Move up (higher priority)',title:'Move up: higher in the list wins when times overlap',text:'↑',onclick:function(){if(r.previousElementSibling){list.insertBefore(r,r.previousElementSibling);renum();check()}}}),
+   el('button',{type:'button','class':'ic','aria-label':'Move down',title:'Move down',text:'↓',onclick:function(){if(r.nextElementSibling){list.insertBefore(r.nextElementSibling,r);renum();check()}}}),
+   el('button',{type:'button','class':'ic','aria-label':'Remove this time',text:'✕',onclick:function(){r.remove();renum();check()}})]));
+  r._read=function(){if(rp.value==='date')return{id:e.id,days:[],date:dt.value,dateTo:dt2.value&&dt2.value!==dt.value?dt2.value:undefined,yearly:yr.checked,start:st._val(),end:en._val(),what:wh.value};return{id:e.id,days:[].filter.call(days.children,function(b){return b.getAttribute('aria-pressed')==='true'}).map(function(b){return +b.dataset.d}),start:st._val(),end:en._val(),what:wh.value}};
+  list.appendChild(r);renum()}
+ function renum(){[].forEach.call(list.children,function(r,i){r.querySelector('.num').textContent='Time '+(i+1)})}
+ // conflicts: ask the server (it knows sun times and the rules) whenever the schedule changes
+ var ckT=0;function check(){clearTimeout(ckT);ckT=setTimeout(function(){if(!dlg.open)return;Store.api('POST','api/schedule/check',body()).then(function(j){showConf(j.conflicts);showPlan(j.plan,$('schOn').checked,j.conflicts);if(j.sun){SUN_EST=false;showSun(j.sun)}}).catch(function(e){$('schConf').innerHTML='';$('schConf').appendChild(el('p',{'class':'cf bad',text:e.message}))})},400)}
+ function showConf(cs){var box=$('schConf');box.innerHTML='';if(!cs||!cs.length){if(list.children.length>1)box.appendChild(el('p',{'class':'cf ok',text:'No overlaps: only one time is ever on at once.'}));return}
+  cs.forEach(function(c){
+   if(c.type==='never'){box.appendChild(el('p',{'class':'cf bad',text:c.why==='none'?'Time '+c.a+' doesn’t happen in the next year. Check its days or dates.':'Time '+c.a+' never plays: times above it always cover it. Move it up if it should win.'}));return}
+   box.appendChild(el('p',{'class':'cf info',text:'Time '+c.a+' overrides Time '+c.b+' on '+c.days+' day'+(c.days>1?'s':'')+' (first '+c.firstLocal+'), because it’s higher in the list.'}))})}
+ var DOWS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+ function t12(hm){if(hm==='24:00'||hm==='00:00')return 'midnight';var h=+hm.slice(0,2),m=hm.slice(3);return (h%12||12)+(m==='00'?'':':'+m)+(h<12?' AM':' PM')}
+ function sunTxt(sp){var m=/^([a-z]+)([+-]\d+)?$/.exec(sp);if(!m)return sp;var o=+m[2]||0,a=Math.abs(o);return m[1]+(o?(o>0?' +':' −')+(a>=60?Math.floor(a/60)+' h'+(a%60?' '+a%60+' min':''):a+' min'):'')}
+ function edge(hm,sun){return sun?sunTxt(sun)+' (≈'+t12(hm)+')':t12(hm)}
+ function dayLbl(ds){var d=new Date(ds+'T12:00');return DOWS[d.getDay()]+' '+MON[d.getMonth()]+' '+d.getDate()}
+ function showPlan(plan,on,cs){var box=$('schPlan');box.innerHTML='';if(!plan)return;
+  box.appendChild(el('h3',{text:'What will play · next '+plan.length+' days'+(on?'':' (schedule is off: this is what it would do)')}));
+  var lastOn=-1;plan.forEach(function(d,i){if(d.segs.length)lastOn=i});
+  var tail=lastOn>=0&&lastOn<plan.length-1?plan.slice(lastOn+1):(lastOn<0?plan.slice():[]);plan=lastOn<0?[]:plan.slice(0,lastOn+1);
+  var groups=[];plan.forEach(function(d){var key=d.segs.map(function(g){return g.i+'|'+(g.fromSun||g.from)+'|'+(g.toSun||g.to)}).join(';'),last=groups[groups.length-1];
+   if(last&&last.key===key)last.to=d;else groups.push({key:key,from:d,to:d})});
+  groups.forEach(function(g){var p=el('div',{'class':'pd'});p.appendChild(el('b',{text:g.from===g.to?dayLbl(g.from.date):dayLbl(g.from.date)+' – '+dayLbl(g.to.date)}));
+   if(!g.from.segs.length)p.appendChild(el('div',{'class':'off',text:'Off all day'}));
+   g.from.segs.forEach(function(s){var ln=el('div',{});ln.appendChild(document.createTextNode(edge(s.from,s.fromSun)+' – '+edge(s.to,s.toSun)+' · '+s.what+' '));ln.appendChild(el('span',{'class':'tn',text:'Time '+s.i}));p.appendChild(ln)});
+   if(g.from.segs.length)p.appendChild(el('div',{'class':'off',text:'Off the rest of the day'}));
+   box.appendChild(p)});
+  if(tail.length){var hint='Nothing else is scheduled'+(lastOn<0?' in this period':'')+'. Add an every-week time at the bottom of the list to keep the tree on other nights; times above it still win on their dates.';
+   box.appendChild(el('div',{'class':'pd'},[el('b',{text:(lastOn<0?'':'From ')+dayLbl(tail[0].date)+(lastOn<0?' – '+dayLbl(tail[tail.length-1].date):' on')}),el('div',{'class':'off',text:'Off. '+hint})]))}
+  // times that won't appear above, and why
+  var rows=[].slice.call(list.children);(cs||[]).filter(function(c){return c.type==='never'}).forEach(function(c){
+   var wh=rows[c.a-1]?rows[c.a-1].querySelector('label.what select'):null,nm=wh&&wh.selectedOptions[0]?wh.selectedOptions[0].textContent:'';
+   var by=(cs||[]).filter(function(o){return o.type==='overlap'&&o.loser===c.a}).map(function(o){return 'Time '+o.winner});
+   box.appendChild(el('div',{'class':'pd',style:'border-color:var(--err)'},[el('b',{text:'Not in this list'}),el('div',{text:'Time '+c.a+(nm?' ('+nm+')':'')+(c.why==='none'?' doesn’t happen in the next year: check its days or dates.':' never plays: covered by '+(by.length?by.join(' and '):'times above it')+', which '+(by.length>1?'are':'is')+' above it. Move it up to let it win.')})]))})}
+ function onNote(){var on=$('schOn').checked,n=$('schOnNote');n.textContent=on?'On: the tree turns on and off by itself at these times.':'Off: these times are saved but not used. The tree only plays when you press Play on tree. Tick the box and Save to let the schedule run it.';n.style.color=on?'var(--ok)':'var(--err)'}
+ $('schOn').addEventListener('change',onNote);
+ function body(){return{enabled:$('schOn').checked,lat:$('schLat').value,lon:$('schLon').value,entries:[].map.call(list.children,function(r){return r._read()})}}
+ dlg.addEventListener('change',check);dlg.addEventListener('input',function(ev){if(ev.target.type!=='checkbox')check()});
+ $('schBtn').addEventListener('click',function(){
+  if(!Store.server){say(smsg,'The schedule runs in tree-show. Open this page from tree-show to set it.',true);return}
+  fetch('api/schedule',{cache:'no-store'}).then(function(r){return r.json()}).then(function(j){
+   $('schOn').checked=!!j.schedule.enabled;$('schLat').value=j.schedule.lat==null?'':j.schedule.lat;$('schLon').value=j.schedule.lon==null?'':j.schedule.lon;SUN_EST=false;SUN=j.now.sun;list.innerHTML='';(j.schedule.entries||[]).forEach(row);
+   if(!list.children.length)row({days:[0,1,2,3,4,5,6],start:'17:00',end:'23:00',what:'playlist:'+Store.activeId});
+   $('schInfo').textContent='Times are the tree-show server’s clock: it’s '+DAYS[j.now.day]+' '+j.now.time+' ('+j.now.tz+'). Times can be a clock time or sunset, dusk, sunrise or dawn with an offset (dawn and dusk are civil twilight). A time that ends after midnight is fine. When times overlap, the one higher in the list plays: use ↑ ↓ to put an override above the times it should beat. Outside every time the tree is off. If you press Play, Stop or On tree yourself, that sticks until the schedule’s next change.';
+   showSun(j.now.sun);showConf(j.conflicts);showPlan(j.plan,!!j.schedule.enabled,j.conflicts);onNote();say(sm,'');dlg.showModal()}).catch(function(){say(smsg,'Couldn’t load the schedule.',true)})});
+ $('schAdd').addEventListener('click',function(){row({days:[0,1,2,3,4,5,6],start:'17:00',end:'23:00',what:'playlist:'+Store.playlist.id});check()});
+ $('schCancel').addEventListener('click',function(){dlg.close()});
+ $('schForm').addEventListener('submit',function(ev){ev.preventDefault();var body={enabled:$('schOn').checked,lat:$('schLat').value,lon:$('schLon').value,entries:[].map.call(list.children,function(r){return r._read()})};
+  say(sm,'Saving…');Store.api('PUT','api/schedule',body).then(function(j){dlg.close();Store.status=Object.assign({},Store.status,{schedule:j.status});renderNow();
+   say(smsg,!j.schedule.enabled?'Schedule saved and turned off.':j.status.want==='off'?'Schedule on. The tree is off until the next scheduled time.':'Schedule on. The tree is running now.')}).catch(function(e){say(sm,e.message,true)})});
+})();
+
+// ---------------- design editor ----------------
+var ED={open:false,d:null,orig:null,run:null,frame:new Float32Array(N*3),V:null,held:false,wasHeld:false,timer:0};
+(function(){
+ var dlg=$('edDlg'),em=$('edMsg'),cvE=$('edCv');
+ function patOpts(sel,hasImg,keep){sel.innerHTML='';E.PATS.forEach(function(pt){if(pt.id==='image'&&!hasImg)return;if(pt.mix&&keep.indexOf(pt.id)<0)return;var o=document.createElement('option');o.value=pt.id;o.textContent=pt.n;sel.appendChild(o)})}
+ function deckUI(fs){var q=function(k){return fs.querySelector('[data-k="'+k+'"]')};var g=q('g');[['all','All graphics (changes every 8 beats)'],['fall','Fall set'],['holiday','Holiday set'],['newyear','New Year set'],['gameday','Game day set'],['everyday','Everyday set']].concat(Object.keys(E.GFX).map(function(id){return[id,E.GFX[id].n]})).forEach(function(x){var o=document.createElement('option');o.value=x[0];o.textContent=x[1];g.appendChild(o)});
+  var bl=q('below');[['none','Nothing (plain)']].concat(E.PATS.filter(function(x){return['text','image','graphic','parade'].indexOf(x.id)<0&&!x.mix}).map(function(x){return[x.id,x.n]})).forEach(function(x){var o=document.createElement('option');o.value=x[0];o.textContent=x[1];bl.appendChild(o)});
+  return{fs:fs,p:q('p'),c0:q('c0'),c1:q('c1'),sp:q('sp'),text:q('text'),cl:q('cl'),g:g,below:bl}}
+ var UA=deckUI($('edA')),UB=deckUI($('edB'));
+ function hex6(v){v=String(v||'#000000');return /^#[0-9a-f]{6}$/i.test(v)?v.toLowerCase():'#000000'}
+ function fillDeck(U,dk){U.p.value=dk.p||'spin';U.c0.value=hex6(dk.c&&dk.c[0]);U.c1.value=hex6(dk.c&&dk.c[1]);U.sp.value=dk.sp==null?1:dk.sp;U.text.value=dk.text||'';U.g.value=dk.g||'all';U.below.value=dk.below||'twinkle';var w2=E.hex(hex6(dk.c&&dk.c[1]));U.cl.checked=dk.cl!=null?!!dk.cl:dk.p==='bulbs'?(w2[0]>245&&w2[1]>245&&w2[2]>245):true}
+ function readDeck(U){var o={p:U.p.value,c:[U.c0.value,U.c1.value],sp:+U.sp.value};if(U.p.value==='text'){o.text=U.text.value||'MERRY CHRISTMAS';o.below=U.below.value}if(U.p.value==='graphic'||U.p.value==='parade')o.g=U.g.value;var pt=E.PATS.find(function(x){return x.id===U.p.value});if(pt&&pt.cl)o.cl=U.cl.checked;return o}
+ function show(){ // show/hide fields to match the choices
+  [UA,UB].forEach(function(U){U.fs.querySelector('[data-text]').hidden=U.p.value!=='text';U.fs.querySelector('[data-below]').hidden=U.p.value!=='text';var pt=E.PATS.find(function(x){return x.id===U.p.value}),hn=U.fs.querySelector('[data-hint]');hn.textContent=pt&&pt.h||'';hn.hidden=!(pt&&pt.h);U.fs.querySelector('[data-cl]').hidden=!(pt&&pt.cl);U.fs.querySelector('[data-gfx]').hidden=!(U.p.value==='graphic'||U.p.value==='parade');U.sp.nextElementSibling.textContent=(+U.sp.value).toFixed(2)+'×'});
+  var m=$('edMode').value;$('edB').hidden=m==='off';dlg.querySelector('[data-blend]').hidden=m!=='blend';dlg.querySelector('[data-alt]').hidden=m!=='alt';
+  $('edXf').nextElementSibling.textContent=Math.round(+$('edXf').value*100)+'%';
+  dlg.querySelectorAll('[data-top]').forEach(function(e){e.hidden=!E.CONFIG.topper});
+  dlg.querySelectorAll('[data-tc]').forEach(function(e){e.hidden=!E.CONFIG.topper||!$('edTcOn').checked})}
+ function read(){ // the design as edited
+  var l={A:readDeck(UA),B:readDeck(UB),bpm:Math.max(30,Math.min(240,+$('edBpm').value||120)),top:$('edTop').value,xf:0,auto:0},m=$('edMode').value;
+  if(m==='blend')l.xf=+$('edXf').value;if(m==='alt')l.auto=+$('edAuto').value;
+  if($('edTcOn').checked)l.tc=[$('edTc0').value,$('edTc1').value];if($('edStrict').checked)l.strict=true;
+  if(ED.orig.look.img){l.img=ED.orig.look.img}
+  return{id:ED.orig.id,name:($('edName').value.trim()||'Untitled').slice(0,60),cat:($('edCat').value.trim()||'My designs').slice(0,40),look:l}}
+ function changed(){show();ED.d=read();if($('edLive').checked)pushLive()}
+ function pushLive(){clearTimeout(ED.timer);ED.timer=setTimeout(function(){if(!Store.server||!dlg.open)return;Store.player('design',{design:ED.d,hold:true}).then(function(st){Store.status=st;ED.held=true;renderNow()}).catch(function(e){say(em,e.message,true)})},300)}
+ window.openEditor=function(d){
+  ED.orig=JSON.parse(JSON.stringify(d));var l=ED.orig.look||{};
+  var hasImg=!!l.img,keep=[(l.A||{}).p,(l.B||{}).p];patOpts(UA.p,hasImg,keep);patOpts(UB.p,hasImg,keep);
+  $('edName').value=d.name||'';$('edCat').value=d.cat||'My designs';
+  var cats=$('edCats');cats.innerHTML='';Array.from(new Set(Store.designs.map(function(x){return x.cat||'My designs'}))).forEach(function(c){var o=document.createElement('option');o.value=c;cats.appendChild(o)});
+  fillDeck(UA,l.A||{});fillDeck(UB,l.B||l.A||{});
+  $('edMode').value=l.auto?'alt':l.xf>0?'blend':'off';$('edXf').value=l.xf>0?l.xf:0.5;$('edAuto').value=String([4,8,16,32].indexOf(l.auto)>=0?l.auto:16);
+  $('edBpm').value=l.bpm||120;$('edStrict').checked=!!l.strict;$('edTop').value=l.top||'star';$('edTcOn').checked=!!l.tc;$('edTc0').value=hex6(l.tc&&l.tc[0]||'#000000');$('edTc1').value=hex6(l.tc&&l.tc[1]||'#ffc83a');
+  var s=Store.status;ED.wasHeld=!!(s&&s.playing&&s.player&&s.player.hold&&s.player.id===d.id);ED.held=false;$('edLive').checked=ED.wasHeld;
+  $('edTitle').textContent='Edit “'+(d.name||'design')+'”';say(em,Store.server?'':'Not connected to tree-show: changes save in this browser.');
+  show();ED.d=read();ED.run=E.newRun();
+  var dpr=window.devicePixelRatio||1,w=small()?120:180,h=Math.round(w*1.75);cvE.style.width=w+'px';cvE.style.height=h+'px';cvE.width=w*dpr;cvE.height=h*dpr;var x=cvE.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);ED.V={x:x,w:w,h:h};
+  ED.open=true;dlg.showModal()};
+ function small(){return window.matchMedia('(max-width:640px)').matches}
+ function close(saved){ // put the tree back the way it was
+  clearTimeout(ED.timer);ED.open=false;if(dlg.open)dlg.close();
+  if(ED.held&&!ED.wasHeld&&Store.server)Store.player('release').then(function(st){Store.status=st;renderNow()}).catch(function(){});
+  else if(ED.held&&ED.wasHeld&&!saved&&Store.server)Store.player('design',{design:ED.orig,hold:true}).catch(function(){})}
+ dlg.addEventListener('input',changed);dlg.addEventListener('change',changed);
+ $('edLive').addEventListener('change',function(){if(this.checked){ED.d=read();pushLive()}else if(ED.held&&!ED.wasHeld){ED.held=false;Store.player('release').then(function(st){Store.status=st;renderNow()}).catch(function(){})}});
+ dlg.addEventListener('cancel',function(ev){ev.preventDefault();close(false)});
+ $('edCancel').addEventListener('click',function(){close(false)});
+ $('edMixer').addEventListener('click',function(){var d=read();close(false);loadMixer(d.look);setView('mix');say(msg,'“'+d.name+'” is in Sir Mix-a-Lot. Save design keeps it as a new design.')});
+ function save(asNew){var d=read();if(asNew){d.id='d-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);if(d.name===ED.orig.name)d.name=(d.name+' copy').slice(0,60);if(d.cat===ED.orig.cat&&E.LIBRARY.some(function(x){return x.cat===d.cat}))d.cat='My designs'}
+  $('edSave').disabled=$('edCopy').disabled=true;say(em,'Saving…');
+  Store.putDesign(d).then(function(){$('edSave').disabled=$('edCopy').disabled=false;var keep=ED.held&&!asNew;if(keep){ED.wasHeld=true}close(true);renderLists();renderNow();say(smsg,(asNew?'Saved a copy: “':'Saved “')+d.name+'”.'+(keep?' It’s on the tree; ↩ Playlist goes back to the playlist.':''))})
+   .catch(function(e){$('edSave').disabled=$('edCopy').disabled=false;say(em,e.message,true)})}
+ $('edForm').addEventListener('submit',function(ev){ev.preventDefault();save(false)});
+ $('edCopy').addEventListener('click',function(){save(true)});
+})();
+
+// ---------------- start ----------------
+syncPats();syncAuto();sampleImages();showNames();
+document.body.classList.toggle('booth',app.dataset.view==='mix');
+Store.init().then(function(){local.setPlaylist(Store.playlist);syncOpts();renderLists();renderNow();fillPlSel();
+ if(!Store.server)$('subtitle').textContent='Designs and playlists save in this browser. Open from tree-show to play them on the tree.';
+ setInterval(loop,33)});
+})();
+</script>

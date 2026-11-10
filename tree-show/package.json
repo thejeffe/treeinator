@@ -1,0 +1,10 @@
+{
+  "name": "tree-show",
+  "version": "1.0.0",
+  "description": "Light cone tree show server: designs, playlists and DDP streaming to WLED",
+  "main": "server.js",
+  "private": true,
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "8.18.0" }
+}
