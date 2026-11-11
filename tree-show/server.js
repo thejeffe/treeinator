@@ -309,6 +309,8 @@ function syncWledPower() {
     .catch((e) => { wledOn = null; wledRetryAt = Date.now() + 30000; log('Could not switch WLED', want ? 'on' : 'off', '-', e.message, '(trying again in 30 s)'); });
 }
 setInterval(syncWledPower, 1000);
+// Heartbeat: WLED may have restarted (and come up off, or forgotten its dithering): re-send both every 30 s.
+setInterval(() => { if (Date.now() >= wledRetryAt) wledOn = null; wledDitherSent = null; }, 30000);
 
 // ---------- WLED's own temporal dithering (Settings -> Color -> Dimming -> "in WLED") ----------
 // Needs Jeff's WLED build (dither1). tree-show then sends the plain picture and sets WLED's dithering,
