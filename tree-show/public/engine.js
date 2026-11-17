@@ -3,9 +3,10 @@
  * the browser) = { ribs, rows, arc, topStart, map, flip, gamma }; DEFAULT_CONFIG is used when it's missing.
  * map 'strip': send in physical strand order (serpentine). map 'matrix': WLED has a 2D matrix (ribs wide x rows tall) and
  * does the wiring itself, so send row by row from the top-left (flip mirrors left/right). gamma is applied to WLED output only.
- * Pixels: ribs x rows (tree) + 4 rings 10/20/30/40 (topper, 100).
- * Internal pixel order: k = rib*rows + row (row 0 = top), then topper NT..N-1 center ring out, clockwise from 12.
- * WLED order: tree serpentine from bottom of rib 1 (rib 1 up, rib 2 down, ...) at 0..NT-1, topper at topStart..topStart+99.
+ * Pixels: ribs x rows (tree) + 5 rings 5/10/15/20/25 (topper, 75; see docs/topper-map).
+ * Internal pixel order: k = rib*rows + row (row 0 = top), then topper NT..N-1 center ring out, each ring clockwise (seen from
+ * the front) starting just left of the mounting pole at the bottom.
+ * WLED order: tree serpentine from bottom of rib 1 (rib 1 up, rib 2 down, ...) at 0..NT-1, topper at topStart..topStart+74.
  * WLED frames are WN pixels long; indexes between the tree and the topper stay black.
  */
 (function (root, factory) {
@@ -29,17 +30,27 @@
     return o;
   }
   var CFG = cleanConfig(CONF);
-  var NR = CFG.ribs, ROWS = CFG.rows, NT = NR * ROWS, NTOP = 100, N = NT + NTOP; // ribs, pixels per rib, tree pixels, topper pixels
+  // Topper (docs/topper-map): 5 concentric rings of 5/10/15/20/25 pixels, 2" between pixels along each ring, so a ring of n
+  // pixels has radius n/pi inches (1.6, 3.2, 4.8, 6.4, 8.0). The mounting pole is at 6 o'clock; data enters at the first
+  // pixel just left of the pole (180 + 180/n degrees clockwise from 12, seen from the front) and runs clockwise round each
+  // ring, then jumps to the next ring out. RINGS = [radius in inches, pixels, first pixel angle in degrees].
+  var RINGS = [5, 10, 15, 20, 25].map(function (n) { return [n / PI, n, 180 + 180 / n]; });
+  var NTOP = 0; RINGS.forEach(function (rn) { NTOP += rn[1]; });
+  var TOPR = RINGS[RINGS.length - 1][0]; // outer ring radius (inches)
+  var NR = CFG.ribs, ROWS = CFG.rows, NT = NR * ROWS, N = NT + NTOP; // ribs, pixels per rib, tree pixels, all pixels
+  // Matrix mode: the tree part of the frame is WLED's ribs x rows matrix, row by row from the top left; the topper follows at
+  // topStart (WLED maps LEDs after its matrix straight through, so topStart = the first LED after the matrix works).
   var TOP_START = CFG.topStart, WN = CFG.topper ? TOP_START + NTOP : NT;                          // WLED index of the first topper pixel, WLED frame length
 
   // ---------- geometry ----------
   var RIBSTEP = CFG.arc >= 360 ? 360 / NR : NR > 1 ? CFG.arc / (NR - 1) : 0; // a full circle doesn't repeat the first rib
   var RIBS = []; for (var i = 0; i < NR; i++) RIBS.push(-CFG.arc / 2 + RIBSTEP * i);
-  var RINGS = [[2.4, 10], [4.8, 20], [7.2, 30], [9.6, 40]];
-  var TOPW = 12 / 68;
-  function starPts(R, r) { var p = []; for (var k = 0; k < 10; k++) { var a = (-90 + 36 * k) * PI / 180, rr = k % 2 ? r : R; p.push([rr * Math.cos(a), rr * Math.sin(a)]); } return p; }
-  function inPoly(x, y, P) { var c = false; for (var i = 0, j = P.length - 1; i < P.length; j = i++) { var x1 = P[i][0], y1 = P[i][1], x2 = P[j][0], y2 = P[j][1]; if ((y1 > y) !== (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1) + x1) c = !c; } return c; }
-  var SP = starPts(10.4, 5.2);
+  var TOPW = 12 / 48; // top pixel row diameter / bottom pixel row diameter: 12" top ring over the 48" base (2026-11-15 measurements)
+  // Five-point star on the topper, one arm straight up: the inner two rings are the body, and on the outer rings a pixel is
+  // part of an arm when it's within 12 degrees of an arm's direction. With this layout that lights the tip on ring 5, two
+  // shoulders on ring 4 (9 degrees either side) and one pixel on ring 3 per arm: 35 pixels.
+  function starPts(R, r) { var p = []; for (var k = 0; k < 10; k++) { var a = (-90 + 36 * k) * PI / 180, rr = k % 2 ? r : R; p.push([rr * Math.cos(a), rr * Math.sin(a)]); } return p; } // star outline for drawings
+  function inStar(ri, aDeg) { if (ri < 2) return true; var d = Math.abs(((aDeg % 72) + 72) % 72 - 36); return 36 - d <= 12.01; }
 
   // deterministic seeds so server and browser draw the same thing
   function rng(seed) { var s = seed >>> 0; return function () { s = (s + 0x6D2B79F5) >>> 0; var t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -57,13 +68,16 @@
   var TOPPX = [];
   RINGS.forEach(function (rn, ri) {
     for (var k = 0; k < rn[1]; k++) {
-      var a = TAU * k / rn[1], x = rn[0] * Math.sin(a), y = -rn[0] * Math.cos(a);
-      TOPPX.push({ x: x, y: y, ri: ri, a: a, star: inPoly(x, y, SP) });
+      var deg = (rn[2] + 360 * k / rn[1]) % 360, a = deg * PI / 180;   // clockwise from 12 o'clock, seen from the front
+      var x = rn[0] * Math.sin(a), y = -rn[0] * Math.cos(a);           // inches; x right, y down
+      TOPPX.push({ x: x, y: y, ri: ri, i: k, a: a, deg: deg, star: inStar(ri, deg) });
     }
   });
   TOPPX.forEach(function (tp, k) {
-    var rr = Math.hypot(tp.x, tp.y) / 9.6;
-    PX.push({ tree: false, tp: tp, X: tp.x / 2, Y: -6 + tp.y / 2, row: tp.ri * 3 + k % 3, rib: Math.floor(tp.a / TAU * NR) % NR, col: tp.a / TAU * NR, u: -0.25 + rr * 0.2, x: tp.x / 9.6 * 0.18, ang: tp.a, depth: 1, seed: SEEDS[NT + k] });
+    var rr = Math.hypot(tp.x, tp.y) / TOPR;
+    // Same fields as tree pixels so patterns continue onto the topper in 'follow' mode: X/Y in 2" spacings with the topper
+    // center 12" above the top row, x as a fraction of the 24" base radius, u = height like the tree rows (negative = above).
+    PX.push({ tree: false, tp: tp, X: tp.x / 2, Y: -6 + tp.y / 2, row: tp.ri * 3 + k % 3, rib: Math.floor(tp.a / TAU * NR) % NR, col: tp.a / TAU * NR, u: (-6 + tp.y / 2) / 49, x: tp.x / 24, rr: rr, ang: tp.a, depth: 1, seed: SEEDS[NT + k] });
   });
 
   // ---------- color helpers ----------
@@ -95,13 +109,29 @@
   function glit(p, t, rate) { return hash(p.seed * 991 + Math.floor(t * 18)) < rate; }   // random glitter
   function bg(c, k) { return scl(c[0], k == null ? 0.05 : k); }
   function dot(p, x, y, r) { var dx = p.X - x, dy = p.Y - y, d2 = dx * dx + dy * dy; return d2 < r * r ? 1 - Math.sqrt(d2) / r : 0; }
+  // A ball on rib `rib` at height y (rows, 0 = top row, negative = above the tree). On the tree it lights its own rib; once it
+  // flies above the top row it shows on the topper, spread across the disc by rib (rib 1 on the left), so balls and popcorn
+  // can use the topper. Returns 0-1.
+  function ballHit(p, rib, y, r) {
+    if (p.tree) { var d = Math.abs(p.Y - y); return d < r ? 1 - d / r : 0; }
+    if (y > -1) return 0;
+    var hw = Math.sqrt(Math.max(0, 16 - (y + 6) * (y + 6))) * 0.85; // half-width of the disc at that height
+    return dot(p, (rib / (NR - 1) * 2 - 1) * hw, y, r);
+  }
   // Rockets: launch from the bottom with a spark trail, burst into a ring that falls and glitters.
   // Starburst: bursts in place with a random number of rays.
-  function rockets(p, t, c, star) {
-    var out = bg(c, 0.04);
+  function rocketsAt(t, star) { // per frame: where each rocket is (colors are picked per deck, below)
+    var a = [];
     for (var j = 0; j < 7; j++) {
-      var P = star ? 1.2 : 2.0, tt = t / P + j / 7 + hash(j) * 0.3, slot = Math.floor(tt), ph = tt - slot, h = slot * 7 + j + (star ? 100 : 0);
-      var by = 5 + hash(h + 0.4) * 22, bx = (hash(h) * 2 - 1) * XMAX(by) * 0.85, col = hash(h + 0.8) < 0.3 ? c[1] : mc(c, hash(h + 0.6));
+      var P = star ? 1.2 : 2.0, tt = t / P + j / 7 + hash(j) * 0.3, slot = Math.floor(tt), h = slot * 7 + j + (star ? 100 : 0), by = 5 + hash(h + 0.4) * 22;
+      a.push({ ph: tt - slot, h: h, by: by, bx: (hash(h) * 2 - 1) * XMAX(by) * 0.85, c2: hash(h + 0.8) < 0.3, hc: hash(h + 0.6), rays: 6 + Math.floor(hash(h + 0.2) * 5) });
+    }
+    return a;
+  }
+  function rockets(p, t, c, star) {
+    var out = bg(c, 0.04), RK = memo(star ? 'starburst' : 'rockets', t, function (t) { return rocketsAt(t, star); });
+    for (var j = 0; j < 7; j++) {
+      var q = RK[j], ph = q.ph, h = q.h, by = q.by, bx = q.bx, col = q.c2 ? c[1] : mc(c, q.hc);
       var up = star ? 0 : 0.28;
       if (ph < up) {
         var y = 49 - (49 - by) * Math.sin(ph / up * PI / 2), dx = p.X - bx, dy = p.Y - y;
@@ -112,7 +142,7 @@
       var ddx = p.X - bx, ddy = p.Y - (by + gy), d = Math.sqrt(ddx * ddx + ddy * ddy), fade = Math.pow(1 - age, 1.3);
       if (age < 0.08 && d < 3) out = mix(out, [255, 255, 255], 1 - age / 0.08);            // flash at the burst
       var hit;
-      if (star) { var rays = 6 + Math.floor(hash(h + 0.2) * 5); hit = d < r && Math.abs(Math.sin(Math.atan2(ddy, ddx) * rays / 2 + h)) > 0.9 ? 1 - d / (r + 0.01) * 0.5 : 0; }
+      if (star) { var rays = q.rays; hit = d < r && Math.abs(Math.sin(Math.atan2(ddy, ddx) * rays / 2 + h)) > 0.9 ? 1 - d / (r + 0.01) * 0.5 : 0; }
       else hit = Math.exp(-Math.pow((d - r) / 1.3, 2)) + (d < r ? 0.25 * (glit(p, t, 0.15) ? 1 : 0) : 0);
       if (hit > 0.05) out = mix(out, age > 0.6 && glit(p, t, 0.3) ? [255, 255, 255] : col, Math.min(1, hit * fade * (0.55 + 0.45 * Math.sin(p.seed * 70 + t * 30))));
     }
@@ -162,11 +192,9 @@
   var GFX = {
     turkey: { n: "Turkey", r: [".R.O.Y.O.R.", "RROOYYYOORR", "ROOYBBBYOOR", ".OYBWBWBYO.", "..YBBOBBY..", "...BBRBB...", "..BBBBBBB..", ".BBBBBBBBB.", ".BBBBBBBBB.", "..BBBBBBB..", "...BBBBB...", "...Y...Y...", "..YYY.YYY.."] },
     pumpkin: { n: "Pumpkin", r: [".....G.....", "....GG.....", "..OOOGOOO..", ".OODOOODOO.", "OODOOOOODOO", "OODOOOOODOO", "OODOOOOODOO", "OODOOOOODOO", ".OODOOODOO.", "..OOOOOOO.."] },
-    leaf: { n: "Maple leaf", r: [".....R.....", "....RRR....", ".R..RRR..R.", ".RR.RRR.RR.", "..RRRRRRR..", "RRRRRRRRRRR", ".RRRRRRRRR.", "..RRRRRRR..", "...RRRRR...", "....RRR....", ".....B.....", ".....B.....", ".....B....."] },
     acorn: { n: "Acorn", r: [".....B.....", "....BB.....", "..BBBBBBB..", ".BBBBBBBBB.", ".BBBBBBBBB.", "..TTTTTTT..", "..TTTTTTT..", "..TTTTTTT..", "...TTTTT...", "...TTTTT...", "....TTT....", ".....T....."] },
     pie: { n: "Pumpkin pie", r: ["...W.W.W...", "..WWWWWWW..", ".TTTTTTTTT.", "TOOOOOOOOOT", "TOOOOOOOOOT", "TDDDDDDDDDT", "TTTTTTTTTTT", ".TTTTTTTTT."] },
     hat: { n: "Pilgrim hat", r: ["...BBBBB...", "...BBBBB...", "...BBBBB...", "...BBBBB...", "...YYYYY...", "...YBBBY...", "...YYYYY...", "...BBBBB...", "BBBBBBBBBBB", "BBBBBBBBBBB"] },
-    corn: { n: "Corn", r: [".....Y.....", "....YYY....", "...YYYYY...", "...YOYOY...", "...YYYYY...", "...YOYOY...", "..GYYYYYG..", "..GYYYYYG..", ".GG.YYY.GG.", ".G...Y...G.", "GG.......GG"] },
     heart: { n: "Heart", r: [".RRR...RRR.", "RRRRR.RRRRR", "RRRRRRRRRRR", "RRRRRRRRRRR", ".RRRRRRRRR.", "..RRRRRRR..", "...RRRRR...", "....RRR....", ".....R....."] },
     star: { n: "Star", r: [".....Y.....", ".....Y.....", "....YYY....", "YYYYYYYYYYY", ".YYYYYYYYY.", "..YYYYYYY..", "..YYYYYYY..", ".YYYY.YYYY.", ".YYY...YYY.", "YY.......YY"] },
     bell: { n: "Bell", r: [".....Y.....", "....YYY....", "...YYYYY...", "...YYYYY...", "..YYYYYYY..", "..YYYYYYY..", ".YYYYYYYYY.", "YYYYYYYYYYY", ".....R.....", "....RRR...."] },
@@ -183,7 +211,7 @@
     champagne: { n: "Champagne", r: [".W...W..W..", "..W.W.W....", "..Y.....Y..", "..YYYYYYY..", "..YYWYYYY..", "...YYYWY...", "....YYY....", ".....Y.....", ".....Y.....", "...YYYYY..."] }
   };
   var GPAL = { R: [220, 25, 30], O: [255, 110, 0], D: [190, 60, 0], Y: [255, 200, 20], G: [20, 170, 50], B: [120, 60, 15], T: [215, 150, 80], W: [240, 240, 240], U: [30, 80, 230] };
-  var GSETS = { fall: ['turkey', 'pumpkin', 'leaf', 'acorn', 'pie', 'hat', 'corn'], holiday: ['tree', 'star', 'bell', 'gift', 'snowman', 'snowflake', 'candycane', 'candle', 'stocking', 'wreath', 'heart'], newyear: ['champagne', 'star', 'heart', 'bell'], gameday: ['football', 'trophy', 'star'], everyday: ['heart', 'star', 'trophy', 'football'] };
+  var GSETS = { fall: ['turkey', 'pumpkin', 'acorn', 'pie', 'hat'], holiday: ['tree', 'star', 'bell', 'gift', 'snowman', 'snowflake', 'candycane', 'candle', 'stocking', 'wreath', 'heart'], newyear: ['champagne', 'star', 'heart', 'bell'], gameday: ['football', 'trophy', 'star'], everyday: ['heart', 'star', 'trophy', 'football'] };
   GSETS.all = Object.keys(GFX);
   function gfxList(spec) { return GFX[spec] ? [spec] : GSETS[spec] || GSETS.all; }
   // Draws graphic g with its middle at around-the-tree position x0 (rib units from the front center); deskewed like text.
@@ -259,8 +287,8 @@
     { id: 'pacifica', n: 'Pacifica', f: function (p, t, c) { var w = Math.sin(p.X * 0.35 + t * 1.5) + Math.sin(p.Y * 0.21 - t * 1.1 + p.X * 0.12) + Math.sin((p.X + p.Y) * 0.17 + t * 2) + 1.2 * noise3(p.X * 0.15, p.Y * 0.15 - t * 0.4, t * 0.5); var v = (w + 3.6) / 7.6; var col = mix(scl(c[0], 0.4), c[1], smooth(0.2, 0.85, v)); col = mix(col, hue(0.5 + 0.08 * Math.sin(t * 0.3 + p.Y * 0.05)), 0.2); if (v > 0.74) col = mix(col, [230, 255, 255], smooth(0.74, 0.93, v)); return col; } },
     { id: 'matrix', n: 'Matrix', f: function (p, t, c) { var out = bg(c, 0.03), lane = p.tree ? p.rib : 1000 + Math.round(p.X * 2); for (var j = 0; j < 3; j++) { var h = hash(lane * 7.3 + j * 3.1), sp = 12 + h * 22, head = frac(t * sp / 75 + h) * 75 - 14, d = head - p.Y; if (d >= 0 && d < 1) return mix(c[1], [255, 255, 255], 0.7); if (d > 0 && d < 16) { var f = Math.pow(1 - d / 16, 1.5) * (glit(p, t, 0.12) ? 1.3 : 0.8); out = mix(out, c[1], Math.min(1, f)); } } return out; } },
     { id: 'dna', cl: 1, n: 'DNA', f: function (p, t, c) { var cx = (NR - 1) / 2, a = p.Y * 0.22 - t * 3, amp = NR * 0.32, s1 = cx + Math.sin(a) * amp, s2 = cx - Math.sin(a) * amp, x = p.tree ? p.col : cx + p.X; var d1 = Math.abs(x - s1), d2 = Math.abs(x - s2), front = Math.cos(a) > 0; var c2 = c[0][0] + c[0][1] + c[0][2] < 60 ? (c.mono ? monoPal(c, 0.5) : [255, 255, 255]) : c[0]; if (d1 < 0.75) return scl(c[1], front ? 1 : 0.4); if (d2 < 0.75) return scl(c2, front ? 0.4 : 1); var rung = Math.floor(p.Y + 0.5) % 5 === 0 && x > Math.min(s1, s2) + 0.7 && x < Math.max(s1, s2) - 0.7; return rung ? scl(mc(c, p.Y / 50 + t * 0.1), 0.45) : bg(c); } },
-    { id: 'rain', cl: 1, n: 'Rain', f: function (p, t, c) { var out = bg(c, 0.07); for (var j = 0; j < 10; j++) { var tt = t * 0.8 + j / 10, slot = Math.floor(tt), age = tt - slot, h = slot * 10 + j; var cy = 4 + hash(h + 0.3) * 40, dx = p.X - (hash(h) * 2 - 1) * XMAX(cy) * 0.9, dy = p.Y - cy, d = Math.sqrt(dx * dx + dy * dy), r = age * 13; var band = Math.exp(-Math.pow((d - r) / 0.9, 2)) * (1 - age); if (age < 0.06 && d < 1.2) band = 1; if (band > 0.02) out = mix(out, hash(h + 0.5) < 0.5 ? c[1] : rp(c, hash(h + 0.9)), Math.min(1, band * 1.5)); } return out; } },
-    { id: 'bounce', cl: 1, n: 'Bounce', f: function (p, t, c) { if (!p.tree) return bg(c, 0.08); var out = bg(c, 0.05); for (var j = 0; j < 8; j++) { var cyc = t * (0.45 + hash(j * 2.3) * 0.45) + j * 0.3, n = Math.floor(cyc), ph = cyc - n, rib = Math.floor(hash(j * 5.1 + Math.floor(n / 4)) * NR); if (p.rib !== rib) continue; var damp = Math.pow(0.7, n % 4), y = 49 - 4 * ph * (1 - ph) * (40 + hash(j) * 8) * damp, d = Math.abs(p.Y - y); if (d < 1.8) out = mix(out, j % 3 ? rp(c, hash(j + 0.7) + t * 0.05) : c[1], 1 - d / 1.8); } return out; } },
+    { id: 'rain', cl: 1, n: 'Rain', f: function (p, t, c) { var out = bg(c, 0.07), R = memo('rain', t, function (t) { var a = []; for (var j = 0; j < 10; j++) { var tt = t * 0.8 + j / 10, slot = Math.floor(tt), h = slot * 10 + j, cy = 4 + hash(h + 0.3) * 40; a.push([(hash(h) * 2 - 1) * XMAX(cy) * 0.9, cy, tt - slot, h]); } return a; }); for (var j = 0; j < 10; j++) { var age = R[j][2], h = R[j][3], cy = R[j][1], dx = p.X - R[j][0], dy = p.Y - cy, d = Math.sqrt(dx * dx + dy * dy), r = age * 13; var band = Math.exp(-Math.pow((d - r) / 0.9, 2)) * (1 - age); if (age < 0.06 && d < 1.2) band = 1; if (band > 0.02) out = mix(out, hash(h + 0.5) < 0.5 ? c[1] : rp(c, hash(h + 0.9)), Math.min(1, band * 1.5)); } return out; } },
+    { id: 'bounce', cl: 1, n: 'Bounce', h: 'Balls bouncing up the ribs; with the topper on, the high ones fly up onto it.', f: function (p, t, c) { var out = bg(c, p.tree ? 0.05 : 0.08); for (var j = 0; j < 8; j++) { var cyc = t * (0.45 + hash(j * 2.3) * 0.45) + j * 0.3, n = Math.floor(cyc), ph = cyc - n, rib = Math.floor(hash(j * 5.1 + Math.floor(n / 4)) * NR); if (p.tree && p.rib !== rib) continue; var damp = Math.pow(0.7, n % 4), y = 49 - 4 * ph * (1 - ph) * (CFG.topper ? 44 + hash(j) * 14 : 40 + hash(j) * 8) * damp, d = ballHit(p, rib, y, 1.8); if (d > 0) out = mix(out, j % 3 ? rp(c, hash(j + 0.7) + t * 0.05) : c[1], d); } return out; } },
     { id: 'lava', n: 'Lava', f: function (p, t, c) { var s = 0; for (var j = 0; j < 6; j++) { var by = 24 + Math.sin(t * (0.35 + j * 0.07) + j * 1.3) * 23, bx = Math.sin(t * (0.33 + j * 0.08) + j * 2.1) * XMAX(by) * 0.7, dx = p.X - bx, dy = (p.Y - by) * 0.6; s += 18 / (dx * dx + dy * dy + 1); } var v = smooth(0.6, 1.5, s); return mix(scl(c[0], 0.15), mix(c[1], hue(0.02 + 0.06 * Math.sin(t * 0.4 + s)), 0.3), v); } },
     { id: 'octopus', cl: 1, n: 'Octopus', f: function (p, t, c) { var dx = p.X, dy = (p.Y - 18) * 0.8, a = Math.atan2(dy, dx), r = Math.sqrt(dx * dx + dy * dy); var v = 0.5 + 0.5 * Math.sin(5 * a + 2.2 * Math.sin(r * 0.28 - t * 2.2) - r * 0.32 + t * 2.4); return scl(rp(c, a / TAU + r * 0.025 - t * 0.06), v * v); } },
     { id: 'pride', cl: 1, n: 'Pride', f: function (p, t, c) { var h = t * 0.07 + p.X * 0.015 + p.Y * 0.012 + Math.sin(t * 0.6 + p.Y * 0.08) * 0.12; var b = 0.5 + 0.5 * Math.sin(p.Y * 0.28 - t * 3.2 + Math.sin(p.X * 0.18 + t * 1.3) * 1.5); return scl(mix(mc(c, h), c[1], 0.12), 0.15 + 0.85 * b * b); } },
@@ -268,7 +296,7 @@
     { id: 'blackhole', cl: 1, n: 'Black hole', f: function (p, t, c) { var out = bg(c, 0.03), cy = 22; var P = memo('hole', t, function (t) { return trailPts(holePath, t, 10, 6, 0.06); }); for (var j = 0; j < 10; j++) { var v = trailHit(p, P[j], 1.5); if (v > 0) out = mix(out, rp(c, j / 10 + t * 0.04), Math.min(1, v * 1.4)); } var core = dot(p, 0, cy, 2.2); return core ? mix(out, [255, 255, 255], core * (0.6 + 0.4 * Math.sin(t * 6))) : out; } },
     { id: 'swirl', cl: 1, n: 'Swirl', f: function (p, t, c) { var ax = Math.sin(t * 0.7) * XMAX(20) * 0.5, ay = 20 + Math.cos(t * 0.53) * 14, bx = Math.sin(t * 0.61 + 2) * XMAX(30) * 0.5, by = 30 + Math.cos(t * 0.47 + 1) * 14; var d1 = Math.hypot(p.X - ax, p.Y - ay), d2 = Math.hypot(p.X - bx, p.Y - by); var v = (Math.sin(d1 * 0.45 - t * 3.5) + Math.sin(d2 * 0.45 + t * 2.7) + 2) / 4; var col = scl(rp(c, (d1 - d2) * 0.025 + t * 0.08), v * v * 1.2); return glit(p, t, 0.02) ? [255, 255, 255] : col; } },
     { id: 'waverly', cl: 1, n: 'Waverly', f: function (p, t, c) { var lane = p.tree ? p.col : p.col; var h = 12 + 34 * noise3(lane * 0.35, t * 1.1, 0.5), top = 49 - h, d = p.Y - top; if (p.tree && Math.abs(d) < 0.8) return [255, 255, 255]; if (!p.tree) return scl(rp(c, lane / NR + t * 0.05), 0.5 + 0.5 * Math.sin(t * 4)); if (d < 0) return bg(c); return scl(rp(c, (49 - p.Y) / 70 + t * 0.05), 0.35 + 0.65 * (1 - d / (h + 1))); } },
-    { id: 'popcorn', cl: 1, n: 'Popcorn', f: function (p, t, c) { if (!p.tree) return bg(c, 0.08); var out = bg(c, 0.05); for (var j = 0; j < 12; j++) { var f = 0.5 + hash(j * 3.7) * 0.4, cyc = t * f + hash(j), n = Math.floor(cyc), ph = cyc - n, rib = Math.floor(hash(j * 11 + n * 3) * NR); if (p.rib !== rib) continue; var y = 49 - 4 * ph * (1 - ph) * (18 + hash(j + n) * 30), d = Math.abs(p.Y - y); if (d < 1.4) out = mix(out, hash(j + n * 0.7) < 0.3 ? c[1] : mc(c, hash(j * 2 + n)), 1 - d / 1.4); } return out; } },
+    { id: 'popcorn', cl: 1, n: 'Popcorn', h: 'Kernels popping up the ribs; with the topper on, the big pops land on it.', f: function (p, t, c) { var out = bg(c, p.tree ? 0.05 : 0.08); for (var j = 0; j < 12; j++) { var f = 0.5 + hash(j * 3.7) * 0.4, cyc = t * f + hash(j), n = Math.floor(cyc), ph = cyc - n, rib = Math.floor(hash(j * 11 + n * 3) * NR); if (p.tree && p.rib !== rib) continue; var y = 49 - 4 * ph * (1 - ph) * (18 + hash(j + n) * (CFG.topper ? 41 : 30)), d = ballHit(p, rib, y, 1.4); if (d > 0) out = mix(out, hash(j + n * 0.7) < 0.3 ? c[1] : mc(c, hash(j * 2 + n)), d); } return out; } },
     { id: 'bees', cl: 1, n: 'Bees', f: function (p, t, c) { var out = bg(c, 0.04), P = memo('bees', t, function (t) { return { pts: trailPts(beePath, t, 6, 6, 0.04), fl: [0, 1, 2, 3, 4, 5].map(function (j) { return beeTgt(j, Math.floor(t * beeSp(j) + j * 0.37) + 1); }) }; }); for (var j = 0; j < 6; j++) { var v = trailHit(p, P.pts[j], 1.4); if (v > 0) out = mix(out, c.mono ? c[1] : mix(c[1], [255, 220, 0], 0.4), Math.min(1, v * 1.4)); var T = P.fl[j], fl = dot(p, T[0], T[1], 1.6); if (fl > 0) out = mix(out, mc(c, hash(j * 5)), fl * 0.7); } return out; } },
     { id: 'hiphotic', cl: 1, n: 'Hiphotic', f: function (p, t, c) { var v = Math.sin(p.X * 0.22 + Math.cos(p.Y * 0.17 + t * 0.9) * 2.4 + t * 1.4) + Math.cos(p.Y * 0.2 + Math.sin(p.X * 0.19 - t * 1.2) * 2.4 - t); var b = 0.5 + 0.5 * Math.sin(v * 3); return scl(rp(c, v * 0.2 + t * 0.05), 0.1 + 0.9 * b * b); } },
     { id: 'driftrose', cl: 1, n: 'Drift rose', f: function (p, t, c) { var dx = p.X, dy = (p.Y - 20) * 0.75, a = Math.atan2(dy, dx), r = Math.sqrt(dx * dx + dy * dy), out = bg(c, 0.03); for (var j = 0; j < 2; j++) { var k = j ? 3 : 5, rr = 15 * Math.abs(Math.cos(k * (a - t * (j ? -0.5 : 0.4)) / 2)), v = Math.exp(-Math.pow((r - rr) / 1.2, 2)); if (v > 0.03) out = mix(out, j ? c[1] : rp(c, a / TAU + t * 0.1), v); } return out; } },
@@ -282,10 +310,9 @@
     { id: 'tinsel', cl: 1, n: 'Tinsel shimmer', f: function (p, t, c) { var band = Math.floor(frac(p.u * 3 + p.col / NR * 0.5) * 2), base = c.mono ? (band ? c[1] : c[0]) : (band ? [255, 190, 60] : [200, 210, 230]); var g = Math.pow(noise3(p.X * 0.7, p.Y * 0.7, t * 1.6), 3), s = Math.pow(0.5 + 0.5 * Math.sin(p.u * 30 - t * 4 + p.col), 8); return mix(scl(base, 0.3 + 0.35 * g), [255, 255, 255], Math.min(0.7, s * 0.5 + g * 0.4)); } },
     { id: 'ribbonwrap', n: 'Ribbon wrap', f: function (p, t, c) { if (!p.tree) return c[1]; var s = frac(p.u * 3 - p.col / NR - t * 0.12), w = Math.abs(s - 0.5); if (w < 0.09) return mix(c[1], [255, 255, 255], w < 0.02 ? 0.35 : 0); return scl(c[0], 0.45 + 0.15 * Math.sin(p.u * 20 + t)); } },
     // ---- Thanksgiving / autumn ----
-    { id: 'leaves', cl: 1, n: 'Leaves', f: function (p, t, c) { var out = bg(c, 0.06); for (var j = 0; j < 14; j++) { var h = hash(j * 3.3), sp = 0.05 + h * 0.06, q = t * sp + hash(j * 7.7), ph = frac(q), y = -4 + ph * 58, x = (hash(j * 1.9 + Math.floor(q)) * 2 - 1) * XMAX(y) * 0.9 + Math.sin(t * 1.3 + j) * 2.2; var d = dot(p, x, y, 1.7); if (d > 0) out = mix(out, c.mono ? monoPal(c, h) : AUT[j % 4], Math.min(1, d * 1.6)); } return out; } },
-    { id: 'wind', cl: 1, n: 'Wind', f: function (p, t, c) { var gust = 0.6 + 0.4 * Math.sin(t * 0.5), streak = noise3(p.X * 0.15 - t * 1.8 * gust, p.Y * 0.5, t * 0.2), out = mix(bg(c, 0.05), c[1], smooth(0.65, 0.9, streak) * 0.25); for (var j = 0; j < 12; j++) { var h = hash(j * 5.1), y = 3 + h * 44 + Math.sin(t * 2 + j) * 1.5, span = 2 * XMAX(y) + 12, x = frac(t * (0.12 + h * 0.1) * gust + hash(j * 2.7)) * span - span / 2, d = dot(p, x, y, 1.5); if (d > 0) out = mix(out, c.mono ? monoPal(c, h) : AUT[j % 4], Math.min(1, d * 1.6)); } return out; } },
+    { id: 'leaves', cl: 1, n: 'Leaves', f: function (p, t, c) { var out = bg(c, 0.06), L = memo('leaves', t, function (t) { var a = []; for (var j = 0; j < 14; j++) { var h = hash(j * 3.3), sp = 0.05 + h * 0.06, q = t * sp + hash(j * 7.7), ph = frac(q), y = -4 + ph * 58; a.push([(hash(j * 1.9 + Math.floor(q)) * 2 - 1) * XMAX(y) * 0.9 + Math.sin(t * 1.3 + j) * 2.2, y, h]); } return a; }); for (var j = 0; j < 14; j++) { var d = dot(p, L[j][0], L[j][1], 1.7); if (d > 0) out = mix(out, c.mono ? monoPal(c, L[j][2]) : AUT[j % 4], Math.min(1, d * 1.6)); } return out; } },
+    { id: 'wind', cl: 1, n: 'Wind', f: function (p, t, c) { var gust = 0.6 + 0.4 * Math.sin(t * 0.5), streak = noise3(p.X * 0.15 - t * 1.8 * gust, p.Y * 0.5, t * 0.2), out = mix(bg(c, 0.05), c[1], smooth(0.65, 0.9, streak) * 0.25); var W = memo('wind', t, function (t) { var a = []; for (var j = 0; j < 12; j++) { var h = hash(j * 5.1), y = 3 + h * 44 + Math.sin(t * 2 + j) * 1.5, span = 2 * XMAX(y) + 12; a.push([frac(t * (0.12 + h * 0.1) * gust + hash(j * 2.7)) * span - span / 2, y, h]); } return a; }); for (var j = 0; j < 12; j++) { var d = dot(p, W[j][0], W[j][1], 1.5); if (d > 0) out = mix(out, c.mono ? monoPal(c, W[j][2]) : AUT[j % 4], Math.min(1, d * 1.6)); } return out; } },
     { id: 'harvestmoon', cl: 1, n: 'Harvest moon', f: function (p, t, c) { var mx = Math.sin(t * 0.07) * 3, my = 17 + Math.sin(t * 0.05) * 5, dx = p.X - mx, dy = (p.Y - my) * 0.75, d = Math.sqrt(dx * dx + dy * dy), R = 8, moon = c.mono ? c[1] : [255, 140, 30], out = bg(c, 0.04); if (hash(p.seed * 313 + Math.floor(t * 3)) < 0.012) out = [160, 160, 170]; if (d < R) out = scl(moon, 0.7 + 0.35 * noise3(p.X * 0.4, p.Y * 0.4, 3)); else out = mix(out, moon, Math.exp(-(d - R) / 3.5) * 0.5); var cl = smooth(0.5, 0.8, noise3(p.X * 0.07 - t * 0.12, p.Y * 0.2, 1.7)); return mix(out, scl(mix(c[0], [90, 90, 110], 0.6), 0.5), cl * 0.85); } },
-    { id: 'turkeytail', cl: 1, n: 'Turkey strut', f: function (p, t, c, b) { var dx = p.X, dy = 49 - p.Y, a = Math.atan2(dx, dy), r = Math.sqrt(dx * dx + dy * dy), open = 1.0 + 0.35 * Math.sin(b * PI * 0.5); if (r < 7) return c.mono ? scl(c[1], 0.5) : [120, 60, 15]; if (Math.abs(a) > open || r > 34) return bg(c, 0.05); var f = (a / open + 1) * 5.5, i = Math.floor(f), col = c.mono ? monoPal(c, i / 11) : AUT[i % 4]; if (r > 29) col = c.mono ? c[1] : [245, 235, 210]; return scl(col, Math.abs(frac(f) - 0.5) > 0.42 ? 0.35 : 0.9); } },
     // ---- retro graphics ----
     { id: 'graphic', cl: 1, n: 'Graphic', h: 'Shows a retro pixel graphic on the front of the tree. Pick one, or a set to change every 8 beats.', f: function (p, t, c, b, img, k, deck) { if (!p.tree) return bg(c, 0.15); var L = gfxList(deck && deck.g), g = GFX[L[Math.floor(b / 8) % L.length]]; return gfxAt(p, t, c, g, gfxX(p, g.r.length)) || bg(c, 0.12); } },
     { id: 'parade', cl: 1, n: 'Graphic parade', h: 'Retro pixel graphics marching around the tree. Pick one, or a set.', f: function (p, t, c, b, img, k, deck) { if (!p.tree) return bg(c, 0.15); var L = gfxList(deck && deck.g), x = gfxX(p, 12) + t * 2.5, per = 15, i = Math.floor(x / per), g = GFX[L[((i % L.length) + L.length) % L.length]]; return gfxAt(p, t, c, g, x - i * per - per / 2) || bg(c, 0.12); } },
@@ -331,13 +358,124 @@
   }
 
   // ---------- looks ----------
-  // look = { A:{p,c:[hex,hex],sp}, B:{p,c,sp}, xf:0-1, auto:0|8|16, bpm, top:'star'|'follow'|'image', img?:base64 }
+  // ---------- topper modes ----------
+  // Each mode paints the topper's 75 pixels from lead = [color 1, color 2] (the design's topper colors, or the leading deck's).
+  // tp = { ri: ring 0-4 (5/10/15/20/25 pixels), deg / a: angle clockwise from 12 o'clock seen from the front, x / y: inches,
+  // star }. Timed by run.beat so they keep the design's tempo. 'follow' and 'image' are handled in render().
+  function armDist(deg, arms, rot) { var w = 360 / arms; return Math.abs(frac(deg / w - rot + 0.5) - 0.5) * w; } // degrees to the nearest of `arms` arms, turned by rot (turns)
+  function nearestOnRing(tp, ad) { return tp.ri === 0 || ad <= 180 / RINGS[tp.ri][1] + 0.5; } // the pixel on this ring nearest an arm (within half a pixel step)
+  // ---------- topper that matches the tree ----------
+  // 'match' (Match tree): each tree pattern gets a topper version of itself, moving at the deck's own speed (t), so the
+  // topper and tree read as one picture. Patterns that already reach the topper by position (plasma, aurora, ...) just
+  // continue onto it; the rest (lane patterns along the ribs, lights, pictures, bursts, ...) get a version drawn for the
+  // disc (rings, wheel, dots orbiting). No star: the star is its own topper mode.
+  function wheel(tp) { return tp.a / TAU; }                      // 0-1 around, clockwise from 12 o'clock
+  function ringU(tp) { return tp.ri / 4; }                       // 0 center, 1 outer ring
+  function tdot(tp, r, u, w) { var a = u * TAU, d = Math.hypot(tp.x - r * Math.sin(a), tp.y + r * Math.cos(a)); return d < w ? 1 - d / w : 0; } // a dot at radius r (inches), u turns round
+  function burst(tp, t, c, p, rate) { var tt = t * rate, slot = Math.floor(tt), age = tt - slot, cx = (hash(slot) - 0.5) * 6, cy = (hash(slot + 0.4) - 0.5) * 6, d = Math.hypot(tp.x - cx, tp.y - cy), r = age * 12, v = Math.exp(-Math.pow((d - r) / 1.3, 2)) * Math.pow(1 - age, 0.8); if (age < 0.08 && d < 1.5) v = 1; var col = hash(slot + 0.9) < 0.35 ? c[1] : mc(c, hash(slot + 0.7)); return mix(bg(c, 0.05), col, Math.min(1, v * (0.6 + 0.4 * Math.sin(p.seed * 90 + t * 20)))); }
+  var TOPMATCH = {
+    spin: function (tp, t, c) { return Math.floor(wheel(tp) * 8 + t * 2) % 2 ? c[1] : c[0]; },
+    rise: function (tp, t, c) { return Math.floor(t * 2 - tp.ri * 0.6) % 2 ? c[1] : c[0]; },
+    helix: function (tp, t, c) { return frac(wheel(tp) + tp.ri * 0.12 - t * 0.5) < 0.25 ? c[1] : scl(c[0], 0.35); },
+    candy: function (tp, t, c) { return Math.floor((wheel(tp) * 3 + tp.ri * 0.4 - t * 0.6) * 2) % 2 ? c[1] : c[0]; },
+    garland: function (tp, t, c) { var v = frac(wheel(tp) + tp.ri * 0.15 - t * 0.12); return v < 0.07 ? c[1] : Math.abs(v - 0.5) < 0.05 ? [242, 193, 78] : scl(c[0], 0.5); },
+    ribbonwrap: function (tp, t, c) { var w = Math.abs(frac(wheel(tp) + tp.ri * 0.2 - t * 0.12) - 0.5); return w < 0.09 ? mix(c[1], [255, 255, 255], w < 0.03 ? 0.35 : 0) : scl(c[0], 0.45 + 0.15 * Math.sin(tp.ri * 2 + t)); },
+    radar: function (tp, t, c) { var d = frac(wheel(tp) - t * 0.35); return d < 0.12 ? c[1] : scl(c[0], 0.2 + 0.6 * Math.max(0, 1 - d * 3)); },
+    rainbow: function (tp, t, c) { var h = wheel(tp) + tp.ri * 0.05 - t * 0.25; return c.mono ? monoPal(c, h) : hsv(h, 1, 1); },
+    pulse: function (tp, t, c, b) { var e = 0.5 - 0.5 * Math.cos(b / 2 * TAU); return mix(scl(c[0], 0.35), c[1], 0.2 + 0.8 * e); },
+    breathe: function (tp, t, c) { return mix(scl(c[0], 0.35), c[1], 0.5 + 0.5 * Math.sin(t * 1.2)); },
+    glow: function (tp, t, c) { return mix(c[0], c[1], 0.5 + 0.5 * Math.sin(tp.ri * 0.7 - t * 0.8)); },
+    snow: function (tp, t, c) { return nearestOnRing(tp, armDist(tp.deg, 6, t * 0.01)) ? scl(c[1], 0.75 + 0.25 * Math.sin(t * 0.8 + tp.ri)) : scl(c[0], 0.22); },
+    icicles: function (tp, t, c) { var arm = nearestOnRing(tp, armDist(tp.deg, 6, 0)), len = 0.25 + 0.75 * frac(t * 0.12); return arm && ringU(tp) <= len ? mix(scl(c[0], 0.2), c[1], 0.6 + 0.4 * (1 - ringU(tp) / len)) : scl(c[0], 0.12); },
+    fire: function (tp, t, c) { var n = noise3(tp.x * 0.3 + 5, tp.y * 0.3 - t * 0.9, t * 0.6), heat = Math.max(0, Math.min(1, (1.1 - ringU(tp) * 0.6) * (0.35 + 0.75 * n))); return heat < 0.5 ? mix(BLACK, c[0], heat * 2) : mix(c[0], c[1], (heat - 0.5) * 2); },
+    comet: function (tp, t, c) { if (tp.ri < 2) return scl(c[1], tp.ri ? 0.25 : 0.6); var ph = frac(wheel(tp) - t * 0.45), v = Math.pow(1 - ph, 8) * (tp.ri === 4 ? 1 : tp.ri === 3 ? 0.6 : 0.3); return mix(scl(c[0], 0.08), c[1], v); },
+    meteor: function (tp, t, c) { var ph = frac(wheel(tp) + t * 0.4), v = Math.pow(1 - ph, 8) * (tp.ri >= 3 ? 1 : 0.35); return mix(scl(c[0], 0.06), c[1], v); },
+    sparkle: function (tp, t, c, b, p) { var s = Math.sin(t * 4 + p.seed * 60); return s > 0.9 ? c[1] : scl(c[0], 0.45); },
+    twinkle: function (tp, t, c, b, p) { var ph = frac(p.seed * 7.3 + t * (0.15 + p.seed * 0.25)), v = Math.pow(Math.max(0, Math.sin(ph * TAU)), 3); return mix(scl(c[0], 0.18), c[1], v); },
+    waverly: function (tp, t, c) { var h = noise3(t * 1.1, 0.5, 0.5), lit = ringU(tp) <= h; return lit ? scl(rp(c, tp.ri / 5 + t * 0.05), 0.5 + 0.5 * (1 - ringU(tp))) : bg(c); },
+    rain: function (tp, t, c) { var lv = frac(t * 0.8 - tp.ri * 0.18); return mix(bg(c, 0.07), c[1], Math.pow(1 - lv, 4)); },
+    // picture and light patterns, drawn for the disc
+    chase: function (tp, t, c) { return (tp.i + tp.ri + Math.floor(t * 6)) % 3 === 0 ? c[1] : scl(c[0], 0.3); },
+    stringlights: function (tp, t, c) { var on = (tp.i + tp.ri) % 2 === 0, idx = tp.i + tp.ri * 7, col = c.mono ? monoPal(c, idx * 0.37) : C9[idx % 5]; return on ? scl(col, 0.55 + 0.45 * Math.sin(idx * 0.7 - t * 2.5)) : bg(c, 0.07); },
+    gift: function (tp, t, c, b, p) { var band = nearestOnRing(tp, armDist(tp.deg, 4, 0)); return band ? scl(c[1], 0.8 + 0.2 * Math.sin(t * 4 + p.seed * 40)) : scl(c[0], 0.75); },
+    ornamentdrop: function (tp, t, c, b, p) { var q = t / 5 + p.seed * 3, ph = frac(q), h = Math.floor(q) * 7 + p.seed * 99; if (hash(h) > 0.3) return bg(c, 0.06); var col = c.mono ? monoPal(c, hash(h + 0.3)) : ORN[Math.floor(hash(h + 0.3) * 5)]; return mix(bg(c, 0.06), col, Math.sin(ph * PI)); },
+    sleigh: function (tp, t, c, b, p) { var out = bg(c, 0.04), u = frac(t * 0.08); if (hash(p.seed * 313 + Math.floor(t * 2)) < 0.02) out = [120, 120, 140]; var s = tdot(tp, TOPR - 1, u, 2.4); if (s > 0) return mix(out, c.mono ? c[1] : [220, 20, 30], s); for (var j = 1; j < 9; j++) { var d = tdot(tp, TOPR - 1, u - j * 0.025, 2); if (d > 0 && glit(p, t, 0.55)) out = mix(out, c.mono ? c[1] : [255, 200, 60], d * (1 - j / 9)); } return out; },
+    shootingstars: function (tp, t, c, b, p) { var out = bg(c, 0.04), tw = Math.pow(0.5 + 0.5 * Math.sin(t * 1.5 + p.seed * 40), 6); if (p.seed > 0.8) out = mix(out, [200, 200, 220], tw * 0.6); var q = t / 3.2, a = frac(q), h = Math.floor(q); if (a > 0.4) return out; var ang = hash(h) * TAU, dx = Math.sin(ang), dy = -Math.cos(ang), pos = -TOPR + a / 0.4 * TOPR * 2.6, off = (hash(h + 0.5) - 0.5) * TOPR, along = tp.x * dx + tp.y * dy - pos, perp = Math.abs(tp.x * dy - tp.y * dx - off); if (perp < 1.6 && along < 1 && along > -9) out = mix(out, along > -1.5 ? [255, 255, 240] : (c.mono ? c[1] : [255, 210, 120]), (1 - perp / 1.6) * (1 + along / 9)); return out; },
+    text: function (tp, t, c) { return mix(scl(c[0], 0.15), c[1], 0.25 + 0.25 * Math.sin(tp.ri * 0.9 - t * 1.2)); },
+    graphic: function (tp, t, c, b) { var g = frac(b / 8); return mix(bg(c, 0.12), c[1], tp.ri === 4 ? 0.35 + 0.4 * Math.pow(1 - g, 3) : 0.08); },
+    parade: function (tp, t, c, b, p) { return tp.ri >= 3 && (tp.i + Math.floor(t * 2.5)) % 4 === 0 ? mc(c, Math.floor((tp.i + Math.floor(t * 2.5)) / 4) * 0.21) : bg(c, 0.12); },
+    leaves: function (tp, t, c, b, p) { var q = t * (0.05 + p.seed * 0.06) + p.seed * 5, ph = frac(q); if (hash(Math.floor(q) + p.seed * 77) > 0.4) return bg(c, 0.06); return mix(bg(c, 0.06), c.mono ? monoPal(c, p.seed) : AUT[Math.floor(p.seed * 997) % 4], Math.sin(ph * PI)); },
+    wind: function (tp, t, c) { var out = bg(c, 0.05); for (var j = 0; j < 4; j++) { var d = tdot(tp, RINGS[(j + 1) % 5][0], frac(t * (0.12 + j * 0.03) + j * 0.31), 2.2); if (d > 0) out = mix(out, c.mono ? monoPal(c, j / 4) : AUT[j], d); } return out; },
+    harvestmoon: function (tp, t, c) { var moon = c.mono ? c[1] : [255, 140, 30], out = scl(moon, 0.6 + 0.35 * noise3(tp.x * 0.3, tp.y * 0.3, 3)); var cl = smooth(0.5, 0.8, noise3(tp.x * 0.1 - t * 0.12, tp.y * 0.3, 1.7)); return mix(out, scl(mix(c[0], [90, 90, 110], 0.6), 0.5), cl * 0.85); },
+    fireworks: function (tp, t, c, b, p) { return burst(tp, t, c, p, 0.7); },
+    rockets: function (tp, t, c, b, p) { return burst(tp, t, c, p, 0.5); },
+    starburst: function (tp, t, c, b, p) { return burst(tp, t, c, p, 0.5); },
+    bees: function (tp, t, c) { var out = bg(c, 0.04); for (var j = 0; j < 3; j++) { var r = RINGS[1 + j][0] + Math.sin(t * (1.3 + j * 0.4)) * 1.5, d = tdot(tp, r, frac(t * (0.15 + j * 0.07) * (j % 2 ? -1 : 1) + j / 3), 2); if (d > 0) out = mix(out, c.mono ? c[1] : mix(c[1], [255, 220, 0], 0.4), d); } return out; },
+    juggle: function (tp, t, c) { var out = bg(c, 0.04); for (var j = 0; j < 5; j++) { var d = tdot(tp, RINGS[j][0], frac(t * (0.1 + j * 0.04) * (j % 2 ? -1 : 1)), 2.2); if (d > 0) out = mix(out, rp(c, j / 5 + t * 0.03), d); } return out; },
+    blackhole: function (tp, t, c) { if (tp.ri === 0) return mix(bg(c, 0.03), [255, 255, 255], 0.4 + 0.3 * Math.sin(t * 6)); var v = Math.pow(0.5 + 0.5 * Math.cos(TAU * (wheel(tp) * 3 + tp.ri * 0.35 + t * 0.5)), 4); return mix(bg(c, 0.03), rp(c, tp.ri / 5 + t * 0.04), v); },
+    driftrose: function (tp, t, c) { var r = Math.hypot(tp.x, tp.y), out = bg(c, 0.03); for (var j = 0; j < 2; j++) { var k = j ? 3 : 5, rr = TOPR * Math.abs(Math.cos(k * (tp.a - t * (j ? -0.5 : 0.4)) / 2)), v = Math.exp(-Math.pow((r - rr) / 1.2, 2)); if (v > 0.03) out = mix(out, j ? c[1] : rp(c, tp.a / TAU + t * 0.1), v); } return out; },
+    snowswirl: function (tp, t, c) { var out = mix(bg(c, 0.25), c[0], 0.15); for (var j = 0; j < 8; j++) { var d = tdot(tp, RINGS[j % 5][0], frac(t * (0.06 + hash(j) * 0.06) + j * 0.13), 1.8); if (d > 0) out = mix(out, c[1], d); } return out; },
+    lava: function (tp, t, c) { var n = noise3(tp.x * 0.18, tp.y * 0.18, t * 0.35); return mix(scl(c[0], 0.2), mix(c[1], hue(0.02 + 0.06 * Math.sin(t * 0.4)), 0.3), smooth(0.25, 0.6, n)); }
+  };
+  function matchTop(pat, p, t, c, b, img, k, deck, look) {
+    var f = TOPMATCH[pat.id];
+    if (f) return f(p.tp, t, c, b, p);
+    return pat.f(p, t, c, b, img, k, deck); // patterns that already reach the topper by position just continue onto it
+  }
+
+  var TOPMODES = [
+    { id: 'match', n: 'Match tree', h: 'A topper version of the tree pattern, in its colors and at its speed.' },
+    { id: 'star', n: 'Star', h: 'Five-point star, one arm straight up, with a slow glow.', f: function (tp, lead, run) {
+      return tp.star ? scl(lead[1], 0.85 + 0.15 * Math.sin(run.beat * TAU)) : scl(lead[0], 0.12 + 0.25 * (0.5 + 0.5 * Math.sin(run.beat * PI - tp.ri))); } },
+    { id: 'solidstar', n: 'Solid star', h: 'A steady five-point star, no animation.', f: function (tp, lead) {
+      return tp.star ? lead[1] : scl(lead[0], 0.15); } },
+    { id: 'startwinkle', n: 'Twinkling star', h: 'The star with sparkling arms.', f: function (tp, lead, run, p) {
+      if (!tp.star) return scl(lead[0], 0.1);
+      if (tp.ri < 2) return scl(lead[1], 0.75 + 0.1 * Math.sin(run.beat * TAU));
+      var tw = 0.4 + 0.6 * Math.pow(0.5 + 0.5 * Math.sin(run.beat * TAU * (0.5 + hash(p.seed * 13) * 0.7) + p.seed * 40), 2);
+      return glit(p, run.beat / 2, 0.12) ? [255, 255, 255] : scl(lead[1], tw); } },
+    { id: 'spinstar', n: 'Spinning star', h: 'The star turning slowly, one turn every 64 beats.', f: function (tp, lead, run) {
+      return inStar(tp.ri, tp.deg - run.beat * 360 / 16) ? scl(lead[1], 0.9) : scl(lead[0], 0.1); } },
+    { id: 'flake', n: 'Snowflake', h: 'Six arms, turning very slowly.', f: function (tp, lead, run) {
+      return nearestOnRing(tp, armDist(tp.deg, 6, run.beat * 0.02)) ? scl(lead[1], 0.8 + 0.2 * Math.sin(run.beat * PI + tp.ri)) : scl(lead[0], 0.12); } },
+    { id: 'ripple', n: 'Ripple', h: 'Rings pulsing from the center out.', f: function (tp, lead, run) {
+      var lv = frac(run.beat / 2 - tp.ri * 0.22); return mix(scl(lead[0], 0.15), lead[1], Math.pow(1 - lv, 2.2)); } },
+    { id: 'heartbeat', n: 'Heartbeat', h: 'Two thumps every eight beats, strongest at the center.', f: function (tp, lead, run) {
+      var ph = frac(run.beat / 2), a = Math.pow(Math.max(0, Math.cos(TAU * ph)), 6), b = 0.6 * Math.pow(Math.max(0, Math.cos(TAU * (ph - 0.22))), 6);
+      return mix(scl(lead[0], 0.1), lead[1], Math.max(a, b) * (1 - tp.ri * 0.13)); } },
+    { id: 'beam', n: 'Beam', h: 'A bright beam sweeping around with a tail, one turn every 16 beats.', f: function (tp, lead, run) {
+      if (tp.ri === 0) return scl(lead[1], 0.5 + 0.2 * Math.sin(run.beat * TAU));
+      var ph = frac(tp.a / TAU - run.beat / 4), v = Math.max(Math.pow(1 - ph, 7), 0.45 * Math.pow(1 - frac(ph + 0.5), 7));
+      return mix(scl(lead[0], 0.1), lead[1], v); } },
+    { id: 'spiral', n: 'Spiral', h: 'Two arms spiraling out from the center.', f: function (tp, lead, run) {
+      var ph = frac(tp.a / TAU * 2 - tp.ri * 0.2 - run.beat / 8), v = Math.pow(0.5 + 0.5 * Math.cos(TAU * ph), 3);
+      return mix(scl(lead[0], 0.12), lead[1], v); } },
+    { id: 'comet', n: 'Comet', h: 'A comet orbiting the outer rings around a glowing center.', f: function (tp, lead, run) {
+      if (tp.ri < 2) return scl(lead[1], tp.ri === 0 ? 0.6 + 0.2 * Math.sin(run.beat * PI) : 0.25);
+      var ph = frac(tp.a / TAU - run.beat / 4 - (4 - tp.ri) * 0.04), v = Math.pow(1 - ph, 9) * (tp.ri === 4 ? 1 : tp.ri === 3 ? 0.6 : 0.3);
+      return mix(scl(lead[0], 0.08), lead[1], v); } },
+    { id: 'twinkle', n: 'Twinkle', h: 'Pixels twinkling at random in the topper colors.', f: function (tp, lead, run, p) {
+      var v = Math.pow(0.5 + 0.5 * Math.sin(run.beat * TAU * (0.2 + hash(p.seed * 17) * 0.6) + p.seed * 50), 3);
+      return glit(p, run.beat / 3, 0.05) ? mix(lead[1], [255, 255, 255], 0.6) : mix(scl(lead[0], 0.15), lead[1], v); } },
+    { id: 'candle', n: 'Candle', h: 'A warm flicker between the two colors, brightest at the center.', f: function (tp, lead, run) {
+      var n = noise3(tp.x * 0.25 + 5, tp.y * 0.25, run.beat * 2.6); return mix(lead[0], lead[1], (0.35 + 0.65 * n) * (1 - tp.ri * 0.1)); } },
+    { id: 'rainbow', n: 'Rainbow wheel', h: 'A color wheel turning slowly (ignores the topper colors).', f: function (tp, lead, run) {
+      return hsv(frac(tp.a / TAU + run.beat / 16 + tp.ri * 0.04), 0.9, 1); } },
+    { id: 'halo', n: 'Halo', h: 'A bright outer ring and center, the rest soft.', f: function (tp, lead, run, p) {
+      if (tp.ri === 4) return scl(lead[1], 0.75 + 0.25 * Math.sin(run.beat * PI + p.seed * 20));
+      return tp.ri === 0 ? scl(lead[1], 0.7) : scl(lead[0], 0.15); } },
+    { id: 'follow', n: 'Follow tree', h: 'The tree pattern continues onto the topper.' },
+    { id: 'image', n: 'Image', h: 'The uploaded topper image.' }
+  ];
+  var TOPMAP = {}; TOPMODES.forEach(function (m) { TOPMAP[m.id] = m; });
+
+  // look = { A:{p,c:[hex,hex],sp}, B:{p,c,sp}, xf:0-1, auto:0|8|16, bpm, top: a TOPMODES id, img?:base64 }
   function defaultLook() {
-    return { A: { p: 'spin', c: ['#2d68c4', '#f2a900'], sp: 1 }, B: { p: 'rise', c: ['#c8102e', '#ffc72c'], sp: 1 }, xf: 0, auto: 0, bpm: 120, top: 'star' };
+    return { A: { p: 'spin', c: ['#2d68c4', '#f2a900'], sp: 1 }, B: { p: 'rise', c: ['#c8102e', '#ffc72c'], sp: 1 }, xf: 0, auto: 0, bpm: 120, top: 'match' };
   }
   function newRun() { return { tA: 0, tB: 0, beat: 0, xf: 0 }; }
 
-  // Renders one frame of a look into out (Float32Array 3300, internal order). Advances run by dt seconds.
+  // Renders one frame of a look into out (Float32Array N*3, internal order). Advances run by dt seconds.
   function render(look, run, dt, out) {
     var A = look.A || {}, B = look.B || {}, bps = (look.bpm || 120) / 120;
     run.beat += dt * (look.bpm || 120) / 60;
@@ -349,19 +487,17 @@
     var pa = PATMAP[A.p] || PATS[0], pb = PATMAP[B.p] || PATS[0];
     var ca = [hex(A.c && A.c[0]), hex(A.c && A.c[1])], cb = [hex(B.c && B.c[0]), hex(B.c && B.c[1])];
     ca.mono = A.cl === false; cb.mono = B.cl === false; // Classic colors turned off
-    var img = imgOf(look), lead = look.tc ? [hex(look.tc[0]), hex(look.tc[1])] : xf < 0.5 ? ca : cb, top = look.top || 'star';
+    var img = imgOf(look), lead = look.tc ? [hex(look.tc[0]), hex(look.tc[1])] : xf < 0.5 ? ca : cb, top = look.top || 'star', tm = TOPMAP[top] || TOPMAP.star;
+    var trun = { beat: run.beat / 4 }; // the stand-alone topper modes run at a quarter of the beat, so the star glows instead of flashing
     var only = look.strict ? strictPal(look) : null;
     for (var k = 0; k < N; k++) {
       var p = PX[k], c;
-      if (!p.tree && top === 'star') {
-        c = p.tp.star ? scl(lead[1], 0.85 + 0.15 * Math.sin(run.beat * TAU)) : scl(lead[0], 0.12 + 0.25 * (0.5 + 0.5 * Math.sin(run.beat * PI - p.tp.ri)));
-      } else if (!p.tree && top === 'flake') {
-        var tp = p.tp, n = RINGS[tp.ri][1], ad = Math.abs(frac(tp.a / (TAU / 6) + run.beat * 0.02 + 0.5) - 0.5) * 60; // degrees from nearest arm
-        var arm = tp.ri === 0 || ad <= 180 / n + 0.5;
-        c = arm ? scl(lead[1], 0.8 + 0.2 * Math.sin(run.beat * PI + tp.ri)) : scl(lead[0], 0.12);
-      } else if (!p.tree && top === 'ripple') {
-        var lv = frac(run.beat / 2 - p.tp.ri * 0.22);
-        c = mix(scl(lead[0], 0.15), lead[1], Math.pow(1 - lv, 2.2));
+      if (!p.tree && top === 'match') {
+        var m1 = xf < 1 ? matchTop(pa, p, run.tA, ca, run.beat, img, k, A, look) : null;
+        var m2 = xf > 0 ? matchTop(pb, p, run.tB, cb, run.beat, img, k, B, look) : null;
+        c = !m2 ? m1 : !m1 ? m2 : mix(m1, m2, xf);
+      } else if (!p.tree && tm.f) {
+        c = tm.f(p.tp, lead, trun, p);
       } else if (!p.tree && top === 'image') {
         c = img ? [img[k * 3], img[k * 3 + 1], img[k * 3 + 2]] : BLACK;
       } else {
@@ -395,7 +531,7 @@
     var pool = PATS.filter(function (p) { return p.id !== 'image' && p.id !== 'text' && !p.mix; }).map(function (p) { return p.id; });
     var pal1 = pick(PALETTES), pal2 = rand() < 0.6 ? pal1 : pick(PALETTES);
     var pA = pick(pool), pB = pick(pool), sp = [0.5, 0.75, 1, 1, 1.25, 1.5, 2];
-    var look = { A: { p: pA, c: pal1.c.slice(), sp: pick(sp) }, B: { p: pB, c: pal2.c.slice(), sp: pick(sp) }, xf: 0, auto: rand() < 0.45 ? pick([8, 16]) : 0, bpm: pick([90, 100, 110, 120, 128]), top: pick(['star', 'star', 'flake', 'ripple', 'follow']) };
+    var look = { A: { p: pA, c: pal1.c.slice(), sp: pick(sp) }, B: { p: pB, c: pal2.c.slice(), sp: pick(sp) }, xf: 0, auto: rand() < 0.45 ? pick([8, 16]) : 0, bpm: pick([90, 100, 110, 120, 128]), top: pick(['match', 'match', 'match', 'solidstar', 'star', 'startwinkle', 'spinstar', 'flake', 'ripple', 'heartbeat', 'beam', 'spiral', 'comet', 'twinkle', 'halo']) };
     var name = (PATMAP[pA].n) + (look.auto ? ' / ' + PATMAP[pB].n : '') + ' · ' + pal1.n;
     return { id: 'random', name: name, look: look };
   }
@@ -482,7 +618,7 @@
   };
 
   // ---------- Christmas design library ----------
-  // dk(pattern, color1, color2, speed, text) builds a deck. Topper: star | flake | ripple | follow | image. tc = topper colors.
+  // dk(pattern, color1, color2, speed, text) builds a deck. Topper: a TOPMODES id (match = default, star, flake, ripple, follow, image, ...). tc = topper colors.
   var GOLD = ['#3a2a00', '#ffc83a'];
   // Category names by the index L() uses. Display order (by season) is CAT_ORDER, exported as CATS.
   var CATS = ['Christmas · classic', 'Christmas · candy and sweets', 'Winter · snow and ice', 'Winter · fireside', "Christmas · Santa's workshop", 'Christmas · holy night', 'Christmas · messages', 'Party and everyday', "New Year's", 'Team colors', 'Effects', 'Thanksgiving and fall', 'Christmas · retro graphics', 'Christmas · party', 'Christmas · effects'];
@@ -497,7 +633,7 @@
   function L(id, name, cat, A, o) {
     o = o || {};
     if (o.A0g) A.g = o.A0g;
-    var look = { A: A, B: o.B || dk('sparkle', A.c[0], A.c[1]), xf: o.xf || 0, auto: o.auto || 0, bpm: o.bpm || 120, top: o.top || 'star' };
+    var look = { A: A, B: o.B || dk('sparkle', A.c[0], A.c[1]), xf: o.xf || 0, auto: o.auto || 0, bpm: o.bpm || 120, top: o.top || 'match' };
     if (o.tc) look.tc = o.tc;
     if (o.strict) look.strict = true;
     var d = { id: id, name: name, cat: CATS[cat], look: look }; if (o.v) d.v = o.v; return d;
@@ -505,7 +641,7 @@
   var LIBRARY = [
     // Classic Christmas
     L('x-c9', 'Classic C9 bulbs', 0, dk('bulbs', '#000000', '#ffffff'), { tc: GOLD }),
-    L('x-redgreen-spin', 'Red and green spin', 0, dk('spin', '#d4141e', '#13a538', 0.75), { tc: GOLD }),
+    L('x-redgreen-spin', 'Red and green spin', 0, dk('spin', '#d4141e', '#13a538', 0.75), { tc: GOLD, v: 2 }),
     L('x-ribbons', 'Red and green ribbons', 0, dk('helix', '#13a538', '#e0101e', 0.8), { tc: GOLD }),
     L('s-xmas', 'Christmas helix to sparkle', 0, dk('helix', '#d4141e', '#13a538'), { B: dk('sparkle', '#13a538', '#ffffff'), auto: 16 }),
     L('x-garland', 'Gold garland', 0, dk('garland', '#0a5a2a', '#d42a2a'), { tc: GOLD }),
@@ -513,57 +649,57 @@
     L('s-twinkle', 'Warm white twinkle', 0, dk('twinkle', '#7a3a00', '#ffd9a0')),
     L('x-evergreen', 'Evergreen glow', 0, dk('glow', '#06401c', '#2fbf5a', 0.6), { tc: GOLD }),
     L('x-holly', 'Holly and berries', 0, dk('sparkle', '#0a5a2a', '#e0101e'), { tc: ['#0a5a2a', '#e0101e'] }),
-    L('x-tinsel', 'Silver tinsel', 0, dk('sparkle', '#3a4a5a', '#ffffff', 1.5), { B: dk('twinkle', '#3a4a5a', '#ffffff'), auto: 16, top: 'flake' }),
-    L('x-marquee', 'Marquee lights', 0, dk('chase', '#7a1010', '#ffd200'), { tc: GOLD }),
+    L('x-tinsel', 'Silver tinsel', 0, dk('sparkle', '#3a4a5a', '#ffffff', 1.5), { B: dk('twinkle', '#3a4a5a', '#ffffff'), auto: 16, v: 2 }),
+    L('x-marquee', 'Marquee lights', 0, dk('chase', '#7a1010', '#ffd200'), { tc: GOLD, v: 2 }),
     L('x-oldfashioned', 'Old-fashioned tree', 0, dk('bulbs', '#000000', '#ffffff', 0.4), { B: dk('ornaments', '#0a5a2a', '#ffd200'), auto: 16, tc: GOLD }),
     // Candy and sweets
     L('s-candy', 'Candy cane', 1, dk('candy', '#e0101e', '#ffffff')),
-    L('x-candy-still', 'Candy cane stripes', 1, dk('candy', '#e0101e', '#ffffff', 0), { top: 'ripple', tc: ['#e0101e', '#ffffff'] }),
-    L('x-peppermint', 'Peppermint swirl', 1, dk('candy', '#ffffff', '#ff2244', 1.5), { top: 'ripple', tc: ['#ffffff', '#ff2244'] }),
-    L('x-sugarplum', 'Sugar plum fairy', 1, dk('twinkle', '#5a2bb8', '#ff8ad8'), { top: 'flake' }),
+    L('x-candy-still', 'Candy cane stripes', 1, dk('candy', '#e0101e', '#ffffff', 0), { tc: ['#e0101e', '#ffffff'] }),
+    L('x-peppermint', 'Peppermint swirl', 1, dk('candy', '#ffffff', '#ff2244', 1.5), { tc: ['#ffffff', '#ff2244'], v: 2 }),
+    L('x-sugarplum', 'Sugar plum fairy', 1, dk('twinkle', '#5a2bb8', '#ff8ad8'), {}),
     L('x-gingerbread', 'Gingerbread house', 1, dk('chase', '#8a4a14', '#ffffff', 0.6), { tc: ['#8a4a14', '#ffffff'] }),
     L('x-gumdrops', 'Gumdrops', 1, dk('confetti', '#300818', '#ff5c9a')),
-    L('x-cocoa', 'Hot cocoa', 1, dk('glow', '#3a1a08', '#d9a066', 0.5), { top: 'ripple' }),
+    L('x-cocoa', 'Hot cocoa', 1, dk('glow', '#3a1a08', '#d9a066', 0.5), { v: 2 }),
     L('x-ribboncandy', 'Ribbon candy', 1, dk('rise', '#ff2244', '#2ec27e', 1.25)),
     L('x-cookies', 'Frosted cookies', 1, dk('plasma', '#ffb3c7', '#bfefff', 0.7)),
-    L('x-lollipop', 'Lollipop spiral', 1, dk('helix', '#ff5c9a', '#ffffff', 1.3), { B: dk('candy', '#ff5c9a', '#ffffff'), auto: 8, top: 'ripple' }),
+    L('x-lollipop', 'Lollipop spiral', 1, dk('helix', '#ff5c9a', '#ffffff', 1.3), { B: dk('candy', '#ff5c9a', '#ffffff'), auto: 8, v: 2 }),
     // Snow and winter
-    L('s-snow', 'Snowfall', 2, dk('snow', '#1f5fd6', '#e8f4ff'), { top: 'flake' }),
-    L('x-heavysnow', 'Heavy snow', 2, dk('snow', '#0a1a5c', '#ffffff', 1.8), { top: 'flake' }),
-    L('x-icicles', 'Icicles', 2, dk('icicles', '#0a2a6c', '#e8f4ff'), { top: 'flake' }),
-    L('x-aurora', 'Northern lights', 2, dk('aurora', '#0fb37a', '#7a3cff'), { top: 'follow' }),
-    L('x-frost', 'Frost', 2, dk('sparkle', '#1f5fd6', '#e8f4ff'), { top: 'flake' }),
-    L('x-blizzard', 'Blizzard', 2, dk('snow', '#2a3a5a', '#ffffff', 2.5), { B: dk('sparkle', '#2a3a5a', '#ffffff', 2), auto: 8, top: 'flake' }),
-    L('x-wonderland', 'Winter wonderland', 2, dk('twinkle', '#1f3fa6', '#ffffff'), { top: 'flake' }),
-    L('x-icepalace', 'Ice palace', 2, dk('glow', '#1f5fd6', '#bff4ff', 0.6), { top: 'flake' }),
-    L('x-snowglobe', 'Snow globe', 2, dk('snow', '#5a2bb8', '#ffffff', 0.7), { top: 'ripple', tc: ['#5a2bb8', '#ffffff'] }),
-    L('x-polar', 'Polar night', 2, dk('radar', '#0a1a5c', '#9fe8ff', 0.6), { top: 'flake' }),
-    L('x-frozenaurora', 'Aurora to snowfall', 2, dk('aurora', '#14c8b0', '#3a5cff'), { B: dk('snow', '#0a1a5c', '#ffffff'), auto: 16, top: 'flake' }),
+    L('s-snow', 'Snowfall', 2, dk('snow', '#1f5fd6', '#e8f4ff'), {}),
+    L('x-heavysnow', 'Heavy snow', 2, dk('snow', '#0a1a5c', '#ffffff', 1.8), {}),
+    L('x-icicles', 'Icicles', 2, dk('icicles', '#0a2a6c', '#e8f4ff'), {}),
+    L('x-aurora', 'Northern lights', 2, dk('aurora', '#0fb37a', '#7a3cff'), {}),
+    L('x-frost', 'Frost', 2, dk('sparkle', '#1f5fd6', '#e8f4ff'), {}),
+    L('x-blizzard', 'Blizzard', 2, dk('snow', '#2a3a5a', '#ffffff', 2.5), { B: dk('sparkle', '#2a3a5a', '#ffffff', 2), auto: 8 }),
+    L('x-wonderland', 'Winter wonderland', 2, dk('twinkle', '#1f3fa6', '#ffffff'), {}),
+    L('x-icepalace', 'Ice palace', 2, dk('glow', '#1f5fd6', '#bff4ff', 0.6), {}),
+    L('x-snowglobe', 'Snow globe', 2, dk('snow', '#5a2bb8', '#ffffff', 0.7), { tc: ['#5a2bb8', '#ffffff'] }),
+    L('x-polar', 'Polar night', 2, dk('radar', '#0a1a5c', '#9fe8ff', 0.6), { v: 2 }),
+    L('x-frozenaurora', 'Aurora to snowfall', 2, dk('aurora', '#14c8b0', '#3a5cff'), { B: dk('snow', '#0a1a5c', '#ffffff'), auto: 16 }),
     // Fireside
-    L('s-fire', 'Yule fire', 3, dk('fire', '#d42a00', '#ffcc33'), { top: 'follow' }),
-    L('x-yulelog', 'Yule log', 3, dk('fire', '#c41a00', '#ffb000', 0.75), { top: 'follow' }),
-    L('x-candlelight', 'Candlelight', 3, dk('twinkle', '#4a1e00', '#ffb347', 0.5), { top: 'ripple' }),
-    L('x-fireplace', 'Fireplace glow', 3, dk('breathe', '#3a0a00', '#ff6a00', 0.7), { top: 'ripple' }),
+    L('s-fire', 'Yule fire', 3, dk('fire', '#d42a00', '#ffcc33'), {}),
+    L('x-yulelog', 'Yule log', 3, dk('fire', '#c41a00', '#ffb000', 0.75), {}),
+    L('x-candlelight', 'Candlelight', 3, dk('twinkle', '#4a1e00', '#ffb347', 0.5), { v: 2 }),
+    L('x-fireplace', 'Fireplace glow', 3, dk('breathe', '#3a0a00', '#ff6a00', 0.7), { v: 2 }),
     L('x-embers', 'Embers', 3, dk('sparkle', '#3a0800', '#ff6a1a')),
-    L('x-chestnuts', 'Chestnuts roasting', 3, dk('plasma', '#5a1a00', '#ffaa33', 0.6), { top: 'follow' }),
+    L('x-chestnuts', 'Chestnuts roasting', 3, dk('plasma', '#5a1a00', '#ffaa33', 0.6), {}),
     L('x-hearth', 'Hearth and home', 3, dk('glow', '#7a3a00', '#ffd9a0', 0.5), { B: dk('twinkle', '#7a3a00', '#ffd9a0'), auto: 16 }),
     // Santa's workshop
     L('x-santasuit', 'Santa suit', 4, dk('rise', '#e0101e', '#ffffff', 0.75), { tc: ['#e0101e', '#ffffff'] }),
     L('x-elfchase', 'Elf chase', 4, dk('chase', '#13a538', '#e0101e', 1.5)),
     L('x-reindeer', 'Reindeer run', 4, dk('comet', '#3a1e08', '#ffcc66', 1.5), { tc: GOLD }),
-    L('x-rednose', 'Red nose glow', 4, dk('pulse', '#2a0000', '#ff1010'), { top: 'ripple', bpm: 90 }),
+    L('x-rednose', 'Red nose glow', 4, dk('pulse', '#2a0000', '#ff1010'), { bpm: 90, v: 2 }),
     L('x-sleigh', 'Sleigh ride', 4, dk('meteor', '#0a1a5c', '#ffd200', 1.25), { tc: GOLD }),
     L('x-presents', 'Wrapped presents', 4, dk('gift', '#d4141e', '#f2a900')),
     L('x-giftwrap', 'Green gift wrap', 4, dk('gift', '#13a538', '#e0101e'), { tc: ['#13a538', '#e0101e'] }),
-    L('x-toyfactory', 'Toy factory', 4, dk('confetti', '#1a1a2a', '#ffffff'), { top: 'ripple' }),
-    L('x-northpole', 'North Pole stripes', 4, dk('spin', '#e0101e', '#ffffff', 2), { tc: ['#e0101e', '#ffffff'] }),
+    L('x-toyfactory', 'Toy factory', 4, dk('confetti', '#1a1a2a', '#ffffff'), { v: 2 }),
+    L('x-northpole', 'North Pole stripes', 4, dk('spin', '#e0101e', '#ffffff', 2), { tc: ['#e0101e', '#ffffff'], v: 2 }),
     L('x-naughtynice', 'Naughty or nice', 4, dk('wipe', '#e0101e', '#13a538')),
     // Holy night
-    L('x-silentnight', 'Silent night', 5, dk('breathe', '#050a2a', '#1f3a8a', 0.4), { tc: GOLD }),
-    L('x-bethlehem', 'Star of Bethlehem', 5, dk('twinkle', '#050a2a', '#cfd8ff', 0.6), { tc: GOLD }),
+    L('x-silentnight', 'Silent night', 5, dk('breathe', '#050a2a', '#1f3a8a', 0.4), { tc: GOLD, v: 2 }),
+    L('x-bethlehem', 'Star of Bethlehem', 5, dk('twinkle', '#050a2a', '#cfd8ff', 0.6), { tc: GOLD, v: 2 }),
     L('x-angels', 'Angels', 5, dk('glow', '#d9c08a', '#ffffff', 0.4), { tc: GOLD }),
     L('x-holynight', 'O holy night', 5, dk('aurora', '#0a1a5c', '#f2c14e', 0.6), { tc: GOLD }),
-    L('x-peace', 'Peace on earth', 5, dk('breathe', '#0a2a5c', '#e8f4ff', 0.5), { top: 'ripple', tc: ['#0a2a5c', '#ffffff'] }),
+    L('x-peace', 'Peace on earth', 5, dk('breathe', '#0a2a5c', '#e8f4ff', 0.5), { tc: ['#0a2a5c', '#ffffff'], v: 2 }),
     L('x-midnightmass', 'Midnight candles', 5, dk('twinkle', '#2a0a3a', '#ffd9a0', 0.5), { tc: GOLD }),
     L('x-joyworld', 'Joy to the world', 5, dk('rise', '#f2a900', '#ffffff', 0.5), { tc: GOLD }),
     // Messages
@@ -571,33 +707,33 @@
     L('x-msg-hohoho', 'Ho ho ho', 6, dk('text', '#2a0000', '#ffffff', 1, 'HO HO HO'), { tc: ['#e0101e', '#ffffff'] }),
     L('x-msg-joy', 'Joy', 6, dk('text', '#0a2a14', '#f2c14e', 0.7, 'JOY JOY JOY'), { tc: GOLD }),
     L('x-msg-noel', 'Noel', 6, dk('text', '#0a1a5c', '#ffffff', 0.7, 'NOEL'), { tc: GOLD }),
-    L('x-msg-peace', 'Peace', 6, dk('text', '#050a2a', '#9fe8ff', 0.7, 'PEACE'), { top: 'flake' }),
-    L('x-msg-snow', 'Let it snow', 6, dk('text', '#0a1a5c', '#e8f4ff', 1, 'LET IT SNOW'), { top: 'flake' }),
+    L('x-msg-peace', 'Peace', 6, dk('text', '#050a2a', '#9fe8ff', 0.7, 'PEACE'), {}),
+    L('x-msg-snow', 'Let it snow', 6, dk('text', '#0a1a5c', '#e8f4ff', 1, 'LET IT SNOW'), {}),
     L('x-msg-believe', 'Believe', 6, dk('text', '#3a0020', '#ffd200', 0.8, 'BELIEVE'), { tc: GOLD }),
     L('x-msg-greetings', "Season's greetings", 6, dk('text', '#0a3a14', '#ffd9a0', 1, "SEASON'S GREETINGS"), { tc: GOLD }),
-    L('x-msg-holidays', 'Happy holidays', 6, dk('text', '#2a0a3a', '#ff8ad8', 1, 'HAPPY HOLIDAYS'), { top: 'ripple' }),
+    L('x-msg-holidays', 'Happy holidays', 6, dk('text', '#2a0a3a', '#ff8ad8', 1, 'HAPPY HOLIDAYS'), {}),
     L('x-msg-feliz', 'Feliz Navidad', 6, dk('text', '#3a0a00', '#13d14e', 1, 'FELIZ NAVIDAD'), { tc: ['#e0101e', '#13d14e'] }),
     L('x-msg-naughty', 'Naughty or nice?', 6, dk('text', '#2a0000', '#13d14e', 1, 'NAUGHTY OR NICE?'), { tc: ['#e0101e', '#13d14e'] }),
-    L('x-msg-love', 'Love and joy', 6, dk('text', '#2a0010', '#ff4060', 0.8, 'LOVE < JOY <'), { top: 'ripple', tc: ['#2a0010', '#ff4060'] }),
+    L('x-msg-love', 'Love and joy', 6, dk('text', '#2a0010', '#ff4060', 0.8, 'LOVE < JOY <'), { tc: ['#2a0010', '#ff4060'], v: 2 }),
     L('x-msg-santa', 'Santa stop here', 6, dk('text', '#0a1a5c', '#ffffff', 1, 'SANTA STOP HERE!'), { tc: ['#e0101e', '#ffffff'] }),
     // Party lights
-    L('s-rainbow', 'Rainbow comet', 7, dk('rainbow', '#000000', '#ffffff'), { B: dk('comet', '#5a2bb8', '#9fe8ff', 1.25), auto: 8, top: 'follow' }),
-    L('x-rainbowspiral', 'Rainbow spiral', 7, dk('rainbow', '#000000', '#ffffff', 1.5), { top: 'follow' }),
-    L('x-confetti', 'Confetti', 7, dk('confetti', '#101018', '#ffffff', 1.5), { top: 'ripple', tc: ['#101018', '#ffffff'] }),
+    L('s-rainbow', 'Rainbow comet', 7, dk('rainbow', '#000000', '#ffffff'), { B: dk('comet', '#5a2bb8', '#9fe8ff', 1.25), auto: 8 }),
+    L('x-rainbowspiral', 'Rainbow spiral', 7, dk('rainbow', '#000000', '#ffffff', 1.5), {}),
+    L('x-confetti', 'Confetti', 7, dk('confetti', '#101018', '#ffffff', 1.5), { tc: ['#101018', '#ffffff'], v: 2 }),
     L('x-sweater', 'Ugly sweater', 7, dk('chase', '#13a538', '#e0101e', 1.5), { B: dk('candy', '#e0101e', '#ffffff', 1.5), auto: 8 }),
-    L('x-disco', 'Christmas disco', 7, dk('radar', '#13a538', '#e0101e', 1.5), { B: dk('rainbow', '#000000', '#ffffff', 2), auto: 8, bpm: 128, top: 'ripple' }),
-    L('x-bellrock', 'Jingle bell rock', 7, dk('pulse', '#13a538', '#f2a900'), { B: dk('chase', '#e0101e', '#f2a900', 2), auto: 8, bpm: 128, top: 'ripple' }),
+    L('x-disco', 'Christmas disco', 7, dk('radar', '#13a538', '#e0101e', 1.5), { B: dk('rainbow', '#000000', '#ffffff', 2), auto: 8, bpm: 128, v: 2 }),
+    L('x-bellrock', 'Jingle bell rock', 7, dk('pulse', '#13a538', '#f2a900'), { B: dk('chase', '#e0101e', '#f2a900', 2), auto: 8, bpm: 128 }),
     L('x-wipeshow', 'Color wipe', 7, dk('wipe', '#e0101e', '#13a538', 1.5), { B: dk('wipe', '#1f5fd6', '#f2a900', 1.5), auto: 16 }),
-    L('x-plasmaparty', 'Plasma party', 7, dk('plasma', '#5a2bb8', '#13d1ff', 1.2), { top: 'follow' }),
+    L('x-plasmaparty', 'Plasma party', 7, dk('plasma', '#5a2bb8', '#13d1ff', 1.2), {}),
     // New Year's Eve
     L('x-msg-newyear', 'Happy New Year', 8, dk('text', '#1a1400', '#ffd200', 1, 'HAPPY NEW YEAR!'), { B: dk('fireworks', '#000000', '#ffd200'), tc: GOLD }),
-    L('x-fireworks', 'Fireworks', 8, dk('fireworks', '#000000', '#ffd200'), { top: 'ripple', tc: ['#000000', '#ffd200'] }),
-    L('x-champagne', 'Champagne bubbles', 8, dk('sparkle', '#3a2a0a', '#ffe9a8', 1.3), { B: dk('rise', '#3a2a0a', '#ffe9a8'), auto: 16, tc: GOLD }),
-    L('x-countdown', 'Countdown pulse', 8, dk('pulse', '#1a1a1a', '#ffd200'), { bpm: 60, top: 'ripple', tc: ['#1a1a1a', '#ffd200'] }),
-    L('x-goldsilver', 'Gold and silver', 8, dk('twinkle', '#3a4048', '#f2c14e'), { B: dk('sparkle', '#3a4048', '#e6eef7'), auto: 8, tc: GOLD }),
-    L('x-midnightdisco', 'Midnight disco', 8, dk('rainbow', '#000000', '#ffffff', 2), { B: dk('confetti', '#000000', '#ffffff', 2), auto: 8, bpm: 128, top: 'ripple', tc: ['#000000', '#ffffff'] }),
+    L('x-fireworks', 'Fireworks', 8, dk('fireworks', '#000000', '#ffd200'), { tc: ['#000000', '#ffd200'], v: 2 }),
+    L('x-champagne', 'Champagne bubbles', 8, dk('sparkle', '#3a2a0a', '#ffe9a8', 1.3), { B: dk('rise', '#3a2a0a', '#ffe9a8'), auto: 16, tc: GOLD, v: 2 }),
+    L('x-countdown', 'Countdown pulse', 8, dk('pulse', '#1a1a1a', '#ffd200'), { bpm: 60, tc: ['#1a1a1a', '#ffd200'], v: 2 }),
+    L('x-goldsilver', 'Gold and silver', 8, dk('twinkle', '#3a4048', '#f2c14e'), { B: dk('sparkle', '#3a4048', '#e6eef7'), auto: 8, tc: GOLD, v: 2 }),
+    L('x-midnightdisco', 'Midnight disco', 8, dk('rainbow', '#000000', '#ffffff', 2), { B: dk('confetti', '#000000', '#ffffff', 2), auto: 8, bpm: 128, tc: ['#000000', '#ffffff'], v: 2 }),
     // Team colors
-    L('s-bluegold', 'Blue and gold spin', 9, dk('spin', '#2d68c4', '#f2a900')),
+    L('s-bluegold', 'Blue and gold spin', 9, dk('spin', '#2d68c4', '#f2a900'), { v: 2 }),
     L('s-cardinal', 'Cardinal rise', 9, dk('rise', '#c8102e', '#ffc72c')),
     L('x-bluegold-snow', 'Blue and gold snowfall', 9, dk('snow', '#2d68c4', '#f2a900'), { tc: ['#2d68c4', '#f2a900'] }),
     L('x-cardinal-fire', 'Cardinal and gold fire', 9, dk('fire', '#c8102e', '#ffc72c'), { tc: ['#c8102e', '#ffc72c'] }),
@@ -606,7 +742,7 @@
     // Classic colors off with both team colors, so they blend between them instead of one color on a dim background.
     L('x-usc-fighton', 'USC Fight On', 9, tx('FIGHT ON', '#990000', '#ffcc00', 'candy'), { B: dk('spin', '#990000', '#ffcc00'), auto: 16, tc: ['#990000', '#ffcc00'], strict: 1, v: 3 }),
     L('x-usc-trojans', 'USC Trojans', 9, tx('TROJANS', '#990000', '#ffcc00', 'spin'), { tc: ['#990000', '#ffcc00'], strict: 1, v: 3 }),
-    L('x-usc-pulse', 'USC heartbeat', 9, dk('pulse', '#990000', '#ffcc00'), { B: dk('pulse', '#ffcc00', '#990000'), auto: 8, bpm: 100, tc: ['#990000', '#ffcc00'], strict: 1, v: 3 }),
+    L('x-usc-pulse', 'USC heartbeat', 9, dk('pulse', '#990000', '#ffcc00'), { B: dk('pulse', '#ffcc00', '#990000'), auto: 8, bpm: 100, tc: ['#990000', '#ffcc00'], strict: 1, v: 4 }),
     L('x-usc-stripes', 'USC stripes', 9, dk('candy', '#990000', '#ffcc00', 0.8), { tc: ['#990000', '#ffcc00'], strict: 1, v: 3 }),
     L('x-usc-helix', 'USC color wheel', 9, tdk('rainbow', '#990000', '#ffcc00'), { tc: ['#990000', '#ffcc00'], strict: 1, v: 3 }),
     L('x-usc-marquee', 'USC bulbs', 9, tdk('bulbs', '#990000', '#ffcc00', 0.6), { tc: ['#990000', '#ffcc00'], strict: 1, v: 3 }),
@@ -623,77 +759,74 @@
     L('x-ucla-starburst', 'UCLA starburst', 9, tdk('starburst', '#2774ae', '#ffd100'), { tc: ['#2774ae', '#ffd100'], strict: 1, v: 3 }),
     L('x-ucla-football', 'UCLA football', 9, tgdk('football', '#2774ae', '#ffd100'), { B: dk('candy', '#2774ae', '#ffd100', 0.8), auto: 16, tc: ['#2774ae', '#ffd100'], strict: 1, v: 3 }),
     L('x-crosstown', 'Crosstown rivalry', 9, dk('spin', '#990000', '#ffcc00'), { B: dk('spin', '#2774ae', '#ffd100'), auto: 8, tc: ['#ffcc00', '#ffd100'], strict: 1, v: 3 }),
-    L('x-gameday-parade', 'Game day parade', 9, dk('parade', '#000000', '#ffd100', 1), { top: 'follow', A0g: 'gameday' }),
+    L('x-gameday-parade', 'Game day parade', 9, dk('parade', '#000000', '#ffd100', 1), { A0g: 'gameday' }),
     // Christmas effects (14)
-    L('x-cx-twinkle', 'Twinkle lights', 14, dk('twinklelights', '#001a08', '#ffffff'), { top: 'star', tc: GOLD }),
+    L('x-cx-twinkle', 'Twinkle lights', 14, dk('twinklelights', '#001a08', '#ffffff'), { tc: GOLD }),
     L('x-cx-string', 'String of lights', 14, dk('stringlights', '#021a08', '#ffffff'), { tc: GOLD }),
     L('x-cx-drop', 'Ornament drop', 14, dk('ornamentdrop', '#02140a', '#ffffff'), { tc: GOLD }),
-    L('x-cx-sleigh', "Santa's sleigh", 14, dk('sleigh', '#020818', '#ffd200'), { top: 'star', tc: ['#020818', '#ffd200'] }),
-    L('x-cx-stars', 'Shooting stars', 14, dk('shootingstars', '#020818', '#ffe9a0'), { top: 'star', tc: ['#020818', '#fff3c0'] }),
-    L('x-cx-snowglobe', 'Snow globe swirl', 14, dk('snowswirl', '#06183a', '#ffffff'), { top: 'flake', tc: ['#06183a', '#ffffff'] }),
+    L('x-cx-sleigh', "Santa's sleigh", 14, dk('sleigh', '#020818', '#ffd200'), { tc: ['#020818', '#ffd200'] }),
+    L('x-cx-stars', 'Shooting stars', 14, dk('shootingstars', '#020818', '#ffe9a0'), { tc: ['#020818', '#fff3c0'], v: 2 }),
+    L('x-cx-snowglobe', 'Snow globe swirl', 14, dk('snowswirl', '#06183a', '#ffffff'), { tc: ['#06183a', '#ffffff'] }),
     L('x-cx-tinsel', 'Tinsel shimmer', 14, dk('tinsel', '#3a2a00', '#ffffff'), { tc: GOLD }),
     L('x-cx-ribbon', 'Ribbon wrap', 14, dk('ribbonwrap', '#0a5a1a', '#d0102a'), { tc: GOLD }),
     L('x-cx-candyribbon', 'Candy cane ribbon', 14, dk('ribbonwrap', '#ffffff', '#d0102a'), { tc: ['#d0102a', '#ffffff'] }),
-    L('x-cx-eve', 'Christmas Eve sky', 14, dk('shootingstars', '#020818', '#ffe9a0'), { B: dk('sleigh', '#020818', '#ffd200'), auto: 16, top: 'star', tc: ['#020818', '#ffd200'] }),
+    L('x-cx-eve', 'Christmas Eve sky', 14, dk('shootingstars', '#020818', '#ffe9a0'), { B: dk('sleigh', '#020818', '#ffd200'), auto: 16, tc: ['#020818', '#ffd200'] }),
     L('x-cx-dropsparkle', 'Ornaments and lights', 14, dk('ornamentdrop', '#02140a', '#ffffff'), { B: dk('twinklelights', '#001a08', '#ffffff'), auto: 16, tc: GOLD }),
     L('x-cx-wrapped', 'Wrapped in lights', 14, dk('stringlights', '#0a3a14', '#ffffff'), { B: dk('ribbonwrap', '#0a5a1a', '#d0102a'), auto: 16, tc: GOLD }),
-    L('x-fx-soap', 'Soap bubbles', 10, dk('soap', '#1a3a8a', '#ff4fa0', 0.8), { top: 'follow' }),
+    L('x-fx-soap', 'Soap bubbles', 10, dk('soap', '#1a3a8a', '#ff4fa0', 0.8), {}),
     L('x-fx-soap-xmas', 'Christmas soap', 10, dk('soap', '#0a6a2a', '#d0102a', 0.7), { tc: GOLD }),
-    L('x-fx-rockets', 'Rockets', 10, dk('rockets', '#000000', '#ffd200'), { top: 'ripple', tc: ['#000000', '#ffd200'] }),
-    L('x-fx-starburst', 'Starburst', 10, dk('starburst', '#000000', '#ffffff'), { top: 'ripple', tc: ['#000000', '#ffffff'] }),
-    L('x-fx-pacifica', 'Pacifica', 10, dk('pacifica', '#001a40', '#18c8d8', 0.8), { top: 'follow' }),
-    L('x-fx-matrix', 'Digital rain', 10, dk('matrix', '#000000', '#20ff40'), { top: 'follow' }),
+    L('x-fx-rockets', 'Rockets', 10, dk('rockets', '#000000', '#ffd200'), { tc: ['#000000', '#ffd200'], v: 2 }),
+    L('x-fx-starburst', 'Starburst', 10, dk('starburst', '#000000', '#ffffff'), { tc: ['#000000', '#ffffff'], v: 2 }),
+    L('x-fx-pacifica', 'Pacifica', 10, dk('pacifica', '#001a40', '#18c8d8', 0.8), {}),
+    L('x-fx-matrix', 'Digital rain', 10, dk('matrix', '#000000', '#20ff40'), {}),
     L('x-fx-candycane-dna', 'Candy cane DNA', 10, dk('dna', '#000000', '#e0102a'), { tc: ['#3a0008', '#ffffff'] }),
-    L('x-fx-rain', 'Winter rain', 10, dk('rain', '#020a20', '#9fe8ff', 0.8), { top: 'ripple', tc: ['#020a20', '#9fe8ff'] }),
-    L('x-fx-lightning', 'Lightning storm', 10, dk('lightning', '#04081a', '#c8d8ff'), { top: 'follow' }),
+    L('x-fx-rain', 'Winter rain', 10, dk('rain', '#020a20', '#9fe8ff', 0.8), { tc: ['#020a20', '#9fe8ff'] }),
+    L('x-fx-lightning', 'Lightning storm', 10, dk('lightning', '#04081a', '#c8d8ff'), {}),
     L('x-fx-bounce', 'Bouncing ornaments', 10, dk('bounce', '#000000', '#ffd200'), { tc: GOLD }),
-    L('x-fx-lava', 'Lava lamp', 10, dk('lava', '#3a0010', '#ff6a00', 0.7), { top: 'follow' }),
-    L('x-fx-octopus', 'Octopus', 10, dk('octopus', '#000000', '#ff2a8a'), { top: 'follow' }),
-    L('x-fx-pride', 'Pride', 10, dk('pride', '#000000', '#ffffff'), { top: 'follow' }),
-    L('x-fx-juggle', 'Juggle', 10, dk('juggle', '#000000', '#ffd200'), { top: 'ripple', tc: ['#000000', '#ffd200'] }),
-    L('x-fx-blackhole', 'Black hole', 10, dk('blackhole', '#000000', '#8a4fff'), { top: 'follow' }),
-    L('x-fx-swirl', 'Swirl', 10, dk('swirl', '#000000', '#18c8d8'), { top: 'follow' }),
-    L('x-fx-waverly', 'Waverly', 10, dk('waverly', '#000000', '#20ff60'), { top: 'follow' }),
+    L('x-fx-lava', 'Lava lamp', 10, dk('lava', '#3a0010', '#ff6a00', 0.7), {}),
+    L('x-fx-octopus', 'Octopus', 10, dk('octopus', '#000000', '#ff2a8a'), {}),
+    L('x-fx-pride', 'Pride', 10, dk('pride', '#000000', '#ffffff'), {}),
+    L('x-fx-juggle', 'Juggle', 10, dk('juggle', '#000000', '#ffd200'), { tc: ['#000000', '#ffd200'], v: 2 }),
+    L('x-fx-blackhole', 'Black hole', 10, dk('blackhole', '#000000', '#8a4fff'), {}),
+    L('x-fx-swirl', 'Swirl', 10, dk('swirl', '#000000', '#18c8d8'), {}),
+    L('x-fx-waverly', 'Waverly', 10, dk('waverly', '#000000', '#20ff60'), {}),
     L('x-fx-popcorn', 'Popcorn', 10, dk('popcorn', '#000000', '#fff3c0'), { tc: GOLD }),
     L('x-fx-bees', 'Crazy bees', 10, dk('bees', '#001a05', '#ffd200'), { tc: GOLD }),
-    L('x-fx-hiphotic', 'Hiphotic', 10, dk('hiphotic', '#000000', '#ff6a00'), { top: 'follow' }),
-    L('x-fx-driftrose', 'Drift rose', 10, dk('driftrose', '#000000', '#ff2a4a'), { top: 'follow' }),
+    L('x-fx-hiphotic', 'Hiphotic', 10, dk('hiphotic', '#000000', '#ff6a00'), {}),
+    L('x-fx-driftrose', 'Drift rose', 10, dk('driftrose', '#000000', '#ff2a4a'), {}),
     L('x-fx-xmas-octopus', 'Christmas octopus', 10, dk('octopus', '#000000', '#d0102a'), { B: dk('octopus', '#000000', '#0a8a2a'), auto: 16, tc: GOLD }),
     // Thanksgiving (11)
-    L('x-tg-leaves', 'Falling leaves', 11, dk('leaves', '#1a0800', '#ff7a00'), { top: 'follow' }),
-    L('x-tg-wind', 'Autumn wind', 11, dk('wind', '#120600', '#ffb000'), { top: 'follow' }),
-    L('x-tg-moon', 'Harvest moon', 11, dk('harvestmoon', '#02040c', '#ff9a2a', 0.8), { top: 'follow' }),
-    L('x-tg-strut', 'Turkey strut', 11, dk('turkeytail', '#000000', '#c0501a'), { tc: ['#3a1a00', '#ff9a2a'] }),
+    L('x-tg-leaves', 'Falling leaves', 11, dk('leaves', '#1a0800', '#ff7a00'), {}),
+    L('x-tg-wind', 'Autumn wind', 11, dk('wind', '#120600', '#ffb000'), {}),
+    L('x-tg-moon', 'Harvest moon', 11, dk('harvestmoon', '#02040c', '#ff9a2a', 0.8), {}),
     L('x-tg-thanks', 'Give thanks', 11, dk('text', '#1a0800', '#ffb000', 0.8, 'GIVE THANKS'), { B: dk('leaves', '#1a0800', '#ff7a00'), auto: 16, tc: ['#3a1a00', '#ff9a2a'] }),
     L('x-tg-happy', 'Happy Thanksgiving', 11, dk('text', '#140600', '#ff7a00', 0.9, 'HAPPY THANKSGIVING'), { tc: ['#3a1a00', '#ff9a2a'] }),
-    L('x-tg-gobble', 'Gobble gobble', 11, dk('text', '#000000', '#e05a1a', 1, 'GOBBLE GOBBLE'), { B: dk('turkeytail', '#000000', '#c0501a'), auto: 16, tc: ['#3a1a00', '#ff9a2a'] }),
+    L('x-tg-gobble', 'Gobble gobble', 11, dk('text', '#000000', '#e05a1a', 1, 'GOBBLE GOBBLE'), { B: dk('leaves', '#1a0800', '#ff7a00'), auto: 16, v: 2, tc: ['#3a1a00', '#ff9a2a'] }),
     L('x-tg-turkey', 'Turkey and leaves', 11, gdk('turkey', '#0a0400'), { B: dk('leaves', '#1a0800', '#ff7a00'), auto: 16, tc: ['#3a1a00', '#ff9a2a'] }),
     L('x-tg-pumpkin', 'Retro pumpkin', 11, gdk('pumpkin', '#0a0400'), { tc: ['#3a1a00', '#ff9a2a'] }),
-    L('x-tg-parade', 'Harvest parade', 11, dk('parade', '#0a0400', '#ff9a2a', 1), { top: 'follow', A0g: 'fall' }),
+    L('x-tg-parade', 'Harvest parade', 11, dk('parade', '#0a0400', '#ff9a2a', 1), { A0g: 'fall' }),
     L('x-tg-hearth', 'Warm hearth', 11, dk('fire', '#3a0a00', '#ff7a00'), { tc: ['#3a0a00', '#ff7a00'] }),
     // Retro graphics (12)
-    L('x-gfx-parade', 'Holiday parade', 12, dk('parade', '#020818', '#ffffff', 1), { top: 'follow', A0g: 'holiday' }),
-    L('x-gfx-newyear', 'New Year parade', 12, dk('parade', '#05030a', '#ffd200', 1), { top: 'follow', A0g: 'newyear' }),
-    L('x-gfx-slideshow', 'Retro slideshow', 12, dk('graphic', '#020818', '#ffffff'), { top: 'follow', A0g: 'everyday', v: 2 }),
-    L('x-gfx-turkey', 'Retro turkey', 12, gdk('turkey', '#020818'), { top: 'follow' }),
-    L('x-gfx-pumpkin', 'Retro pumpkin', 12, gdk('pumpkin', '#020818'), { top: 'follow' }),
-    L('x-gfx-leaf', 'Retro maple leaf', 12, gdk('leaf', '#020818'), { top: 'follow' }),
-    L('x-gfx-acorn', 'Retro acorn', 12, gdk('acorn', '#020818'), { top: 'follow' }),
-    L('x-gfx-pie', 'Retro pumpkin pie', 12, gdk('pie', '#020818'), { top: 'follow' }),
-    L('x-gfx-hat', 'Retro pilgrim hat', 12, gdk('hat', '#020818'), { top: 'follow' }),
-    L('x-gfx-corn', 'Retro corn', 12, gdk('corn', '#020818'), { top: 'follow' }),
-    L('x-gfx-heart', 'Retro heart', 12, gdk('heart', '#020818'), { top: 'follow' }),
-    L('x-gfx-star', 'Retro star', 12, gdk('star', '#020818'), { top: 'follow' }),
-    L('x-gfx-bell', 'Retro bell', 12, gdk('bell', '#020818'), { top: 'follow' }),
-    L('x-gfx-tree', 'Retro Christmas tree', 12, gdk('tree', '#020818'), { top: 'follow' }),
-    L('x-gfx-gift', 'Retro gift', 12, gdk('gift', '#020818'), { top: 'follow' }),
-    L('x-gfx-snowman', 'Retro snowman', 12, gdk('snowman', '#020818'), { top: 'follow' }),
-    L('x-gfx-snowflake', 'Retro snowflake', 12, gdk('snowflake', '#020818'), { top: 'follow' }),
-    L('x-gfx-candycane', 'Retro candy cane', 12, gdk('candycane', '#020818'), { top: 'follow' }),
-    L('x-gfx-candle', 'Retro candle', 12, gdk('candle', '#020818'), { top: 'follow' }),
-    L('x-gfx-stocking', 'Retro stocking', 12, gdk('stocking', '#020818'), { top: 'follow' }),
-    L('x-gfx-wreath', 'Retro wreath', 12, gdk('wreath', '#020818'), { top: 'follow' }),
-    L('x-gfx-champagne', 'Retro champagne', 12, gdk('champagne', '#020818'), { top: 'follow' })
+    L('x-gfx-parade', 'Holiday parade', 12, dk('parade', '#020818', '#ffffff', 1), { A0g: 'holiday' }),
+    L('x-gfx-newyear', 'New Year parade', 12, dk('parade', '#05030a', '#ffd200', 1), { A0g: 'newyear' }),
+    L('x-gfx-slideshow', 'Retro slideshow', 12, dk('graphic', '#020818', '#ffffff'), { A0g: 'everyday', v: 2 }),
+    L('x-gfx-turkey', 'Retro turkey', 12, gdk('turkey', '#020818'), {}),
+    L('x-gfx-pumpkin', 'Retro pumpkin', 12, gdk('pumpkin', '#020818'), {}),
+    L('x-gfx-acorn', 'Retro acorn', 12, gdk('acorn', '#020818'), {}),
+    L('x-gfx-pie', 'Retro pumpkin pie', 12, gdk('pie', '#020818'), {}),
+    L('x-gfx-hat', 'Retro pilgrim hat', 12, gdk('hat', '#020818'), {}),
+    L('x-gfx-heart', 'Retro heart', 12, gdk('heart', '#020818'), {}),
+    L('x-gfx-star', 'Retro star', 12, gdk('star', '#020818'), {}),
+    L('x-gfx-bell', 'Retro bell', 12, gdk('bell', '#020818'), {}),
+    L('x-gfx-tree', 'Retro Christmas tree', 12, gdk('tree', '#020818'), {}),
+    L('x-gfx-gift', 'Retro gift', 12, gdk('gift', '#020818'), {}),
+    L('x-gfx-snowman', 'Retro snowman', 12, gdk('snowman', '#020818'), {}),
+    L('x-gfx-snowflake', 'Retro snowflake', 12, gdk('snowflake', '#020818'), {}),
+    L('x-gfx-candycane', 'Retro candy cane', 12, gdk('candycane', '#020818'), {}),
+    L('x-gfx-candle', 'Retro candle', 12, gdk('candle', '#020818'), {}),
+    L('x-gfx-stocking', 'Retro stocking', 12, gdk('stocking', '#020818'), {}),
+    L('x-gfx-wreath', 'Retro wreath', 12, gdk('wreath', '#020818'), {}),
+    L('x-gfx-champagne', 'Retro champagne', 12, gdk('champagne', '#020818'), {})
   ];
   var STARTER_PLAYLIST = ['x-c9', 'x-msg-merry', 'x-ribbons', 's-candy', 'x-icicles', 'x-garland', 'x-msg-hohoho', 'x-aurora', 'x-ornaments', 's-twinkle',
     'x-elfchase', 'x-heavysnow', 'x-msg-joy', 'x-presents', 'x-peppermint', 'x-bethlehem', 'x-reindeer', 'x-tinsel', 'x-msg-snow', 'x-yulelog'];
@@ -713,7 +846,7 @@
       var h = have[d.id];
       if (h) { // a newer library version replaces a copy the user hasn't edited
         if ((d.v || 1) > (h.v || 1) && !h.edited) { var i = db.designs.indexOf(h); db.designs[i] = JSON.parse(JSON.stringify(d)); added++; }
-        else if (!h.edited) { if (h.cat !== d.cat || h.name !== d.name) { h.cat = d.cat; h.name = d.name; added++; } } // keep sections/names current
+        else if (!h.edited) { if (h.cat !== d.cat || h.name !== d.name) { h.cat = d.cat; h.name = d.name; added++; } if (h.look && h.look.top !== d.look.top) { h.look.top = d.look.top; added++; } } // keep sections/names current
         else if (!h.cat) h.cat = d.cat;
         return;
       }
@@ -729,12 +862,21 @@
     'Christmas · effects': ['x-fx-soap-xmas', 'x-fx-xmas-octopus', 'x-fx-bounce'],
     'Christmas · candy and sweets': ['x-fx-candycane-dna'],
     'Winter · snow and ice': ['x-fx-rain', 'x-gfx-snowman', 'x-gfx-snowflake'],
-    'Thanksgiving and fall': ['x-gfx-turkey', 'x-gfx-leaf', 'x-gfx-acorn', 'x-gfx-pie', 'x-gfx-hat', 'x-gfx-corn'],
+    'Thanksgiving and fall': ['x-gfx-turkey', 'x-gfx-acorn', 'x-gfx-pie', 'x-gfx-hat'],
     "New Year's": ['x-gfx-newyear', 'x-gfx-champagne'],
     'Party and everyday': ['x-gfx-heart', 'x-gfx-slideshow']
   };
   Object.keys(MOVE).forEach(function (cat) { MOVE[cat].forEach(function (id) { var d = LIBRARY.find(function (x) { return x.id === id; }); if (d) d.cat = cat; }); });
-  var RETIRED = ['x-gfx-pumpkin', 'x-fx-lightning']; // duplicate pumpkin; Lightning storm (strobe-like flashing)
+  var RETIRED = ['x-gfx-pumpkin', 'x-fx-lightning', 'x-gfx-leaf', 'x-gfx-corn', 'x-tg-strut']; // duplicate pumpkin; Lightning storm (strobe-like flashing)
+  // Star toppers for designs where a star suits better than matching the tree (the rest use 'match', the default):
+  // solid, glowing, twinkling and spinning stars.
+  var STAR_TOPS = {
+    'x-c9': 'solidstar', 'x-ornaments': 'solidstar', 'x-oldfashioned': 'solidstar', 'x-presents': 'solidstar', 'x-giftwrap': 'solidstar', 'x-msg-merry': 'solidstar', 'x-msg-greetings': 'solidstar', 'x-msg-santa': 'solidstar', 'x-cx-drop': 'solidstar', 'x-gfx-tree': 'solidstar', 'x-gfx-gift': 'solidstar', 'x-gfx-stocking': 'solidstar',
+    'x-garland': 'star', 'x-evergreen': 'star', 'x-cocoa': 'star', 'x-candlelight': 'star', 'x-silentnight': 'star', 'x-angels': 'star', 'x-holynight': 'star', 'x-peace': 'star', 'x-msg-noel': 'star', 'x-msg-peace': 'star', 'x-cx-twinkle': 'star', 'x-cx-sleigh': 'star', 'x-cx-eve': 'star', 'x-gfx-candle': 'star',
+    's-xmas': 'startwinkle', 's-twinkle': 'startwinkle', 'x-holly': 'startwinkle', 'x-tinsel': 'startwinkle', 'x-sugarplum': 'startwinkle', 'x-wonderland': 'startwinkle', 'x-toyfactory': 'startwinkle', 'x-bethlehem': 'startwinkle', 'x-midnightmass': 'startwinkle', 'x-msg-hohoho': 'startwinkle', 'x-msg-believe': 'startwinkle', 'x-msg-feliz': 'startwinkle', 'x-msg-newyear': 'startwinkle', 'x-cx-stars': 'startwinkle', 'x-cx-tinsel': 'startwinkle', 'x-cx-dropsparkle': 'startwinkle', 'x-gfx-bell': 'startwinkle', 'x-gfx-wreath': 'startwinkle',
+    'x-redgreen-spin': 'spinstar', 'x-ribbons': 'spinstar', 'x-northpole': 'spinstar', 'x-joyworld': 'spinstar', 'x-msg-joy': 'spinstar', 'x-msg-holidays': 'spinstar', 'x-cx-string': 'spinstar', 'x-cx-ribbon': 'spinstar', 'x-cx-wrapped': 'spinstar', 'x-gfx-star': 'spinstar'
+  };
+  LIBRARY.forEach(function (d) { if (STAR_TOPS[d.id]) d.look.top = STAR_TOPS[d.id]; });
   LIBRARY = LIBRARY.filter(function (d) { return RETIRED.indexOf(d.id) < 0; });
   // Ready-made playlists, added to a show once (deleting one keeps it deleted).
   var LIBRARY_PLAYLISTS = [
@@ -743,7 +885,7 @@
         'x-ucla-gobruins', 'x-ucla-bruins', 'x-ucla-8clap', 'x-ucla-stripes', 'x-ucla-waves', 'x-ucla-swirl', 'x-ucla-starburst', 'x-ucla-twinkle', 'x-ucla-football',
         'x-crosstown', 'x-gameday-parade', 's-bluegold', 's-cardinal'] },
     { id: 'pl-thanksgiving', name: 'Leading up to Thanksgiving', mode: 'shuffle', fade: 3, randSec: 60,
-      ids: ['x-tg-leaves', 'x-tg-wind', 'x-tg-moon', 'x-tg-strut', 'x-tg-thanks', 'x-tg-happy', 'x-tg-gobble', 'x-tg-turkey', 'x-tg-pumpkin', 'x-tg-parade', 'x-tg-hearth', 'x-gfx-leaf', 'x-gfx-corn', 'x-gfx-pie'] },
+      ids: ['x-tg-leaves', 'x-tg-wind', 'x-tg-moon', 'x-tg-thanks', 'x-tg-happy', 'x-tg-gobble', 'x-tg-turkey', 'x-tg-pumpkin', 'x-tg-parade', 'x-tg-hearth', 'x-gfx-pie'] },
     { id: 'pl-newyear', name: "After Christmas: New Year's", mode: 'shuffle', fade: 3, randSec: 60,
       ids: ['x-msg-newyear', 'x-fireworks', 'x-champagne', 'x-countdown', 'x-goldsilver', 'x-midnightdisco', 'x-fx-rockets', 'x-fx-starburst', 'x-gfx-newyear', 'x-gfx-champagne', 'x-wonderland', 'x-frost', 'x-polar', 'x-msg-snow'] }
   ];
@@ -771,6 +913,6 @@
   function isLibraryPlaylist(id) { return LIBRARY_PLAYLISTS.some(function (x) { return x.id === id; }); }
   function isLibraryId(id) { return LIBRARY.some(function (d) { return d.id === id; }); }
 
-  return { N: N, NR: NR, NT: NT, WN: WN, TOP_START: TOP_START, CONFIG: CFG, DEFAULT_CONFIG: DEFAULT_CONFIG, cleanConfig: cleanConfig, PX: PX, TOPPX: TOPPX, RIBS: RIBS, TOPW: TOPW, PATS: PATS, PALETTES: PALETTES, hex: hex, render: render, newRun: newRun, defaultLook: defaultLook,
+  return { N: N, NR: NR, NT: NT, NTOP: NTOP, WN: WN, TOP_START: TOP_START, CONFIG: CFG, DEFAULT_CONFIG: DEFAULT_CONFIG, cleanConfig: cleanConfig, PX: PX, TOPPX: TOPPX, RINGS: RINGS, TOPR: TOPR, RIBS: RIBS, TOPW: TOPW, PATS: PATS, TOPMODES: TOPMODES, PALETTES: PALETTES, hex: hex, render: render, newRun: newRun, defaultLook: defaultLook,
     randomLook: randomLook, toWled: toWled, toBytes: toBytes, WIDX: WIDX, b64enc: b64enc, b64dec: b64dec, imgOf: imgOf, Player: Player, starterShows: starterShows, starPts: starPts, LIBRARY: LIBRARY, CAT_ORDER: CAT_ORDER, CHRISTMAS_PLAYLIST: CHRISTMAS_PLAYLIST, LIBRARY_PLAYLISTS: LIBRARY_PLAYLISTS, mergePlaylists: mergePlaylists, isLibraryPlaylist: isLibraryPlaylist, GFX: GFX, GSETS: GSETS, CATS: CAT_ORDER, mergeLibrary: mergeLibrary, isLibraryId: isLibraryId };
 });

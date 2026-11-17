@@ -37,7 +37,7 @@ const D = require('./dither.js');     // accurate colors when the tree is dim (S
 const ditherer = D.create(E);
 const H = require('./ha.js');      // Home Assistant over MQTT (Settings -> Home Assistant)
 const LAYOUT = E.CONFIG; // what the engine actually uses after validation
-function currentSettings() { const fc = fpsCfg(); return Object.assign({ wledHost: CFG.wledHost, wledPort: CFG.wledPort, wledPower: settings.wledPower !== false, wledBlank: !!settings.wledBlank, dither: D.clean(settings.dither), fpsAuto: fc.auto, fpsMax: fc.max, mqtt: H.publicCfg(settings.mqtt) }, LAYOUT); }
+function currentSettings() { const fc = fpsCfg(); return Object.assign({ wledHost: CFG.wledHost, wledPort: CFG.wledPort, wledPower: settings.wledPower !== false, wledBlank: !!settings.wledBlank, dither: D.clean(settings.dither), fpsAuto: fc.auto, fpsMax: fc.max, level: levelCfg(), mqtt: H.publicCfg(settings.mqtt) }, LAYOUT); }
 function cleanSettings(b) {
   const out = {};
   const host = String(b.wledHost == null ? CFG.wledHost : b.wledHost).trim();
@@ -66,6 +66,9 @@ function cleanSettings(b) {
   const fmax = Math.round(+(b.fpsMax == null ? fpsCfg().max : b.fpsMax));
   if (!(fmax >= 5 && fmax <= 120)) throw new Error('Frames per second should be between 5 and 120.');
   out.fpsMax = fmax;
+  const lv = b.level == null ? levelCfg() : { on: b.level.on !== false, avg: Math.round(+b.level.avg) };
+  if (!(lv.avg >= 2 && lv.avg <= 60)) throw new Error('Even brightness average should be between 2% and 60%.');
+  out.level = lv;
   out.mqtt = H.clean(b.mqtt, settings.mqtt);
   const dec = { textTop: [0, 299, 'Text position', 1], textSize: [1, 8, 'Text height', 0.1], textWidth: [0.5, 4, 'Text width', 0.1] };
   for (const k in dec) {
@@ -91,6 +94,29 @@ const DATA_FILE = path.join(CFG.dataDir, 'shows.json');
 const LIVE_HOLD_MS = 1500; // playlist pauses while live frames keep arriving
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+
+// ---- watchdog: if the main thread gets stuck (no frames, no web page), restart the service ----
+// A worker thread watches a counter the frame loop bumps every frame. No change for WD_SECS:
+// it notes why in watchdog.log (readable without sudo) and kills the process; systemd
+// (Restart=always) starts it again in a few seconds. Crashes are noted there too.
+const WD_FILE = path.join(CFG.dataDir, 'watchdog.log'), WD_SECS = 20;
+function wdNote(msg) { try { fs.appendFileSync(WD_FILE, new Date().toISOString() + ' ' + msg + '\n'); } catch (e) { /* ignore */ } }
+const wdBeat = new Int32Array(new SharedArrayBuffer(4));
+if (!process.env.NO_WATCHDOG) {
+  const { Worker } = require('worker_threads');
+  new Worker(`
+    const { workerData: d } = require('worker_threads'), fs = require('fs');
+    const beat = new Int32Array(d.buf); let last = -1, same = 0;
+    setInterval(() => {
+      const v = Atomics.load(beat, 0);
+      if (v !== last) { last = v; same = 0; return; }
+      if (++same < d.secs) return;
+      try { fs.appendFileSync(d.file, new Date().toISOString() + ' watchdog: the frame loop was stuck for ' + d.secs + ' s: restarting\\n'); } catch (e) { /* ignore */ }
+      process.kill(process.pid, 'SIGKILL');
+    }, 1000);`, { eval: true, workerData: { buf: wdBeat.buffer, secs: WD_SECS, file: WD_FILE } }).unref();
+}
+process.on('uncaughtException', (e) => { wdNote('crash: ' + ((e && e.stack) || e)); console.error(e); process.exit(1); });
+process.on('unhandledRejection', (e) => { wdNote('crash (promise): ' + ((e && e.stack) || e)); console.error(e); process.exit(1); });
 
 // ---------- storage ----------
 let db;
@@ -134,13 +160,57 @@ let dimBuf = null;
 // Frames to the tree. With "Colors when dim" off, brightness is applied here
 // (rounding a second time); otherwise the frame was already dimmed and
 // dithered in one step (dither.js) and goes out as it is.
+// Even brightness (settings.level = { on, avg }): designs differ a lot in total light (candy stripes ~65 % of all-white,
+// fire ~9 %, a night sky ~2 %). This levels them toward the same average: a running average of the picture's light
+// (linear, after gamma; 100 % = every LED full white, ~1 s window so beats and flashes still show) is pulled to `avg` %:
+// busy designs are dimmed, dim ones (fire) brightened, at most LEVEL_BOOST times. Applied before the general brightness,
+// so that still sets the overall level. A near-black picture (fades, the tree off) is left alone.
+const LEVEL_BOOST = 4;
+function levelCfg() { const l = settings.level || {}; const a = +(l.avg != null ? l.avg : l.max); return { on: l.on !== false, avg: a >= 2 && a <= 60 ? Math.round(a) : 15 }; }
+// levelGain (in light) multiplies the brightness setting. It is applied to the pixels, every frame, smoothly: never by
+// changing WLED's own brightness, which lags and made the tree flicker ("glitter") while a transition moved it in steps.
+// In "Dimming in WLED" WLED's bri16 stays fixed at the brightness setting x LEVEL_BOOST (up to full), changing only when
+// the setting does, so dim designs have room to be brightened; the pixels carry the rest (scaled down, WLED dithers them).
+// In the other modes the brightness is applied here anyway (masterBright), in the same frame, so it can follow the gain.
+// A picture that gets brighter is held down at once (never bright then stepping down); a darker one eases back up.
+const LEVEL_HEAD = 1.0; // Jeff: rather never too bright than quick to brighten
+const LIN = new Float32Array(256); // pre-gamma level -> light (0-1), rebuilt if the gamma changes
+let linGamma = 0;
+let levelAvg = null, levelAt = 0, levelGain = 1, lvFrame = null, lvBytes = null;
+function levelStep(light) { // light: this frame's 0-1 average, before any brightness; returns the pixel factor (light)
+  const lc = levelCfg(), now = Date.now(), dt = Math.min(0.2, (now - (levelAt || now)) / 1000); levelAt = now;
+  if (levelAvg == null || light > levelAvg) levelAvg = light; // brighter: at once
+  else levelAvg += (light - levelAvg) * (1 - Math.exp(-dt / 1.0)); // darker: ease back up
+  const tgt = lc.avg / 100;
+  levelGain = !lc.on || levelAvg < 0.003 ? 1 : Math.max(0.02, Math.min(LEVEL_BOOST, tgt / levelAvg));
+  const g = lc.on && light > 0.003 ? Math.min(levelGain, LEVEL_HEAD * tgt / light) : levelGain;
+  return baseBright() * g / masterBright(); // what the pixels need on top of the brightness the tree is at
+}
+function levelFrame(frame) { // internal order, before gamma
+  const g = LAYOUT.gamma, n = LAYOUT.topper ? E.N : E.NT; let sum = 0;
+  if (linGamma !== g) { for (let i = 0; i < 256; i++) LIN[i] = Math.pow(i / 255, g); linGamma = g; }
+  for (let i = 0; i < n * 3; i++) { const v = frame[i]; if (v > 0) sum += LIN[v >= 255 ? 255 : v | 0]; }
+  const px = levelStep(sum / (n * 3)); if (Math.abs(px - 1) < 0.002) return frame;
+  if (!lvFrame || lvFrame.length !== frame.length) lvFrame = new Float32Array(frame.length);
+  const kk = Math.pow(px, 1 / g); for (let i = 0; i < frame.length; i++) lvFrame[i] = Math.min(255, frame[i] * kk); // brightened highlights clip at full
+  return lvFrame;
+}
+function levelBytes(bytes) { // WLED order, after gamma
+  let sum = 0; for (let i = 0; i < bytes.length; i++) sum += bytes[i];
+  const px = levelStep(sum / (bytes.length * 255)); if (Math.abs(px - 1) < 0.002) return bytes;
+  if (!lvBytes || lvBytes.length !== bytes.length) lvBytes = Buffer.alloc(bytes.length);
+  for (let i = 0; i < bytes.length; i++) lvBytes[i] = Math.min(255, Math.round(bytes[i] * px));
+  return lvBytes;
+}
 function sendFrame(frame) {
+  frame = levelFrame(frame);
   const dz = D.clean(settings.dither);
   if (dz.mode === 'off') return sendDDP(E.toWled(frame, 1, wledBytes));
   if (dz.mode === 'wled') return sendDDP(ditherer.plainFrame(frame), true);   // WLED does gamma + dimming
   sendDDP(ditherer.frame(frame, masterBright(), dz.mode, dz.darkest), true);
 }
 function sendLive(bytes) {
+  bytes = levelBytes(bytes);
   const dz = D.clean(settings.dither);
   if (dz.mode === 'off') return sendDDP(bytes);
   if (dz.mode === 'wled') return sendDDP(ditherer.plainBytes(bytes), true);
@@ -263,30 +333,57 @@ async function pollWledFps() {
 }
 setInterval(pollWledFps, 8000);
 
+let loopErrSince = 0, loopErrLogged = 0;
 (function frameLoop() {
   const now = Date.now(), dt = Math.min(0.2, (now - lastT) / 1000); lastT = now; tick++;
-  const live = now < liveUntil;
-  const active = player.step(dt, frame); // keep time moving even while live overrides
-  if (active && !live) {
-    sendFrame(frame);
-    if (lastSendAt) sendFps = sendFps * 0.95 + (1000 / Math.max(1, now - lastSendAt)) * 0.05;
-    lastSendAt = now;
-    if (tick % 2 === 0 && watchers.size) {
-      E.toBytes(frame, Math.pow(masterBright(), 0.4), viewBytes); // eyes see dim LEDs as brighter than linear; at 5% the preview still shows the lights
-      for (const ws of watchers) if (ws.readyState === 1 && ws.bufferedAmount < 20000) ws.send(viewBytes);
-    }
-  } else lastSendAt = 0;
+  Atomics.add(wdBeat, 0, 1);
+  try {
+    const live = now < liveUntil;
+    const active = player.step(dt, frame); // keep time moving even while live overrides
+    if (active && !live) {
+      sendFrame(frame);
+      if (lastSendAt) sendFps = sendFps * 0.95 + (1000 / Math.max(1, now - lastSendAt)) * 0.05;
+      lastSendAt = now;
+      if (tick % 2 === 0 && watchers.size) {
+        E.toBytes(frame, Math.pow(baseBright(), 0.4), viewBytes); // eyes see dim LEDs as brighter than linear; at 5% the preview still shows the lights
+        for (const ws of watchers) if (ws.readyState === 1 && ws.bufferedAmount < 20000) ws.send(viewBytes);
+      }
+    } else lastSendAt = 0;
+    loopErrSince = 0;
+  } catch (e) {
+    // one bad frame never stops the loop; frames failing for 10 s straight: restart clean
+    if (!loopErrSince) loopErrSince = now;
+    if (now - loopErrLogged > 10000) { loopErrLogged = now; log('frame failed:', (e && e.stack) || e); }
+    if (now - loopErrSince > 10000) { wdNote('frames kept failing for 10 s: restarting: ' + ((e && e.stack) || e)); process.exit(1); }
+  }
   setTimeout(frameLoop, Math.max(0, 1000 / currentFps() - (Date.now() - now)));
 })();
 
 function status() {
-  return { type: 'status', player: player.status(), playing: !!db.playlist.running, live: Date.now() < liveUntil, bright: masterBright(), build: BUILD, schedule: scheduleStatus(), activeId: db.activeId, playlistName: db.playlist.name, wled: { host: CFG.wledHost, resolved: !!wledAddr, error: lastSendErr } };
+  return { type: 'status', player: player.status(), playing: !!db.playlist.running, live: Date.now() < liveUntil, bright: baseBright(), userBright: db.bright != null ? db.bright : 1, brightLock: schedBright != null, brightOverride: brightOv, build: BUILD, schedule: scheduleStatus(), activeId: db.activeId, playlistName: db.playlist.name, wled: { host: CFG.wledHost, resolved: !!wledAddr, error: lastSendErr } };
 }
 setInterval(() => broadcast(status()), 1000);
 
 // ---------- general brightness ----------
 // db.bright (0.05-1) scales everything sent to the tree. Older data kept a playlist-only brightness; it moves over once.
-function masterBright() { return db && db.bright != null ? db.bright : 1; }
+// A schedule time can set its own brightness (entry.bright, 5-100 %): while it is on, that overrides db.bright. Changing
+// the brightness by hand (slider, Home Assistant) overrides the schedule's in turn, like playing something by hand: until
+// the next schedule change (another time, or this one's brightness edited) or Resume schedule.
+let schedBright = null, brightOv = false, brKey = null;
+function baseBright() { if (schedBright != null) return schedBright; return db && db.bright != null ? db.bright : 1; } // the brightness setting
+// What the tree is sent at: the setting times Even brightness's gain, up to full (see levelFrame for the rest of a boost).
+function masterBright() {
+  if (D.clean(settings.dither).mode === 'wled') return Math.min(1, baseBright() * (levelCfg().on ? LEVEL_BOOST : 1)); // fixed: see levelStep
+  return Math.min(1, baseBright() * levelGain);
+}
+function updateSchedBright() {
+  const w = scheduleWant(new Date()), e = w && w.entry && w.entry.bright ? w.entry : null, key = e ? e.id + ':' + e.bright : null;
+  if (key !== brKey) { brKey = key; brightOv = false; }
+  const v = e && !brightOv ? e.bright / 100 : null;
+  if (v === schedBright) return false;
+  schedBright = v; log(v == null ? (brightOv ? 'Brightness set by hand: overriding the schedule' : 'Schedule: brightness back to the normal setting') : `Schedule: brightness ${Math.round(v * 100)}%`);
+  return true;
+}
 
 // ---------- WLED power ----------
 // When nothing is being sent, WLED falls back to its own preset after its realtime timeout. With wledPower on (setting,
@@ -315,20 +412,21 @@ setInterval(() => { if (Date.now() >= wledRetryAt) wledOn = null; wledDitherSent
 // ---------- WLED's own temporal dithering (Settings -> Color -> Dimming -> "in WLED") ----------
 // Needs Jeff's WLED build (dither1). tree-show then sends the plain picture and sets WLED's dithering,
 // fine brightness (bri16 from the general brightness) and gamma. Other modes turn it off.
-let wledDither, wledDitherSent = null, wledDitherRetryAt = 0;  // wledDither: undefined = not checked, null = stock WLED
+let wledDither, wledDitherSent = null, wledDitherRetryAt = 0, wledDitherLogged = null, wledDitherBusy = false;  // wledDither: undefined = not checked, null = stock WLED
 function wledDitherWant() {
   const dz = D.clean(settings.dither);
   if (dz.mode !== 'wled') return { on: false };
   return { on: true, bri16: Math.max(1, Math.round(masterBright() * 65535)), g: LAYOUT.gamma, wb: [255, 255, 255], dark: dz.darkest, fps: dz.wledFps, minHz: dz.minHz };
 }
 function syncWledDither() {
-  if (!db || Date.now() < wledDitherRetryAt) return;
+  if (!db || Date.now() < wledDitherRetryAt || wledDitherBusy) return; // one request at a time
   const want = wledDitherWant(), key = JSON.stringify(want);
   if (key === wledDitherSent) return;
   if (!want.on && wledDither === null) { wledDitherSent = key; return; } // stock WLED: nothing to turn off
-  wledDitherSent = key;
+  wledDitherSent = key; wledDitherBusy = true;
   postJson(`http://${CFG.wledHost}/json/state`, { dither: want })
-    .then(() => log(`WLED dithering ${want.on ? 'on, brightness ' + want.bri16 + '/65535' : 'off'}`))
+    .finally(() => { wledDitherBusy = false; })
+    .then(() => { const k = JSON.stringify(Object.assign({}, want, { bri16: 0 })); if (k !== wledDitherLogged) { wledDitherLogged = k; log(`WLED dithering ${want.on ? 'on, brightness ' + want.bri16 + '/65535' : 'off'}`); } }) 
     .catch((e) => { wledDitherSent = null; wledDitherRetryAt = Date.now() + 30000; log('Could not set WLED dithering -', e.message); });
 }
 setInterval(syncWledDither, 500);
@@ -403,10 +501,11 @@ function scheduleWant(d) {
 }
 let lastWant = null;
 function runSchedule(force) {
+  const brChanged = updateSchedBright();
   const w = scheduleWant(new Date());
-  if (!w) { lastWant = null; return; }
+  if (!w) { lastWant = null; if (brChanged) broadcast(status()); return; }
   const key = w.kind + (w.id ? ':' + w.id : '');
-  if (!force && key === lastWant) return;
+  if (!force && key === lastWant) { if (brChanged) broadcast(status()); return; }
   lastWant = key;
   if (w.kind === 'off') { rememberPos(); db.playlist.hold = null; db.playlist.running = false; syncPlayer(false); log('Schedule: tree off'); }
   else if (w.kind === 'playlist') {
@@ -449,9 +548,10 @@ function scheduleStatus() {
   const ue = w.entry ? resolveSpec(w.entry.end, new Date()) : null;
   // following = the tree is doing what the schedule wants (otherwise someone pressed Play/Stop/Hold: a manual override)
   const holding = !!(player.cur && player.cur.hold), running = !!db.playlist.running;
-  const following = w.kind === 'off' ? !running : w.kind === 'design' ? running && holding && player.cur.d.id === w.id : running && !holding && db.playlist.id === (w.id || db.activeId);
+  const fol = (w.kind === 'off' ? !running : w.kind === 'design' ? running && holding && player.cur.d.id === w.id : running && !holding && db.playlist.id === (w.id || db.activeId));
+  const following = fol && !brightOv, brightOnly = fol && brightOv; // brightOnly: playing what the schedule wants, but the brightness was set by hand
   const nx = scheduleNext(sc);
-  return { enabled: true, want: w.kind, following, until: ue == null ? null : hhmm(ue), untilInfo: nx.until, next: nx.next,
+  return { enabled: true, want: w.kind, following, brightOnly, bright: w.entry && w.entry.bright ? w.entry.bright : null, until: ue == null ? null : hhmm(ue), untilInfo: nx.until, next: nx.next,
     design: w.kind === 'design' ? (getDesign(w.id) || {}).name : null, playlist: w.kind === 'playlist' ? (db.playlists.find((x) => x.id === w.id) || activePl()).name : null };
 }
 function cleanSchedule(b) {
@@ -476,6 +576,11 @@ function cleanSchedule(b) {
     if (what.startsWith('playlist:') && !db.playlists.some((x) => x.id === what.slice(9))) throw new Error(`Time ${i + 1}: that playlist no longer exists.`);
     if (what !== 'playlist' && !what.startsWith('playlist:') && !(what.startsWith('design:') && getDesign(what.slice(7)))) throw new Error(`Time ${i + 1}: that design no longer exists.`);
     const out = { id: String(e.id || 'w-' + Date.now().toString(36) + i).slice(0, 40), days: date ? [] : days, start: e.start, end: e.end, what };
+    if (e.bright != null && e.bright !== '') { // brightness for this time, overriding the normal setting
+      const br = Math.round(+e.bright);
+      if (!(br >= 5 && br <= 100)) throw new Error(`Time ${i + 1}: brightness should be between 5% and 100%.`);
+      out.bright = br;
+    }
     if (date) {
       out.date = date; out.yearly = !!e.yearly;
       const to = e.dateTo ? String(e.dateTo) : '';
@@ -618,20 +723,22 @@ function playerAction(b) {
 }
 function setBright(v) {
   if (!(v >= 0.05 && v <= 1)) throw httpError(400, 'Brightness should be between 5% and 100%.');
-  db.bright = Math.round(v * 100) / 100; saveDb(); const st = status(); broadcast(st); return st;
+  db.bright = Math.round(v * 100) / 100; saveDb(); if (brKey) { brightOv = true; updateSchedBright(); } const st = status(); broadcast(st); return st;
 }
 function resumeSchedule() { // end a manual override: do whatever the schedule wants right now
   if (!db.schedule || !db.schedule.enabled) throw httpError(409, 'The schedule is off, so there’s nothing to go back to.');
-  liveFrom = null; liveUntil = 0; lastWant = null; runSchedule(true); log('Schedule resumed by hand');
+  liveFrom = null; liveUntil = 0; lastWant = null; brightOv = false; brKey = null; runSchedule(true); log('Schedule resumed by hand');
   return status();
 }
 function setScheduleEnabled(on) {
   db.schedule = db.schedule || { enabled: false, entries: [] };
   if (!!db.schedule.enabled === on) return;
-  db.schedule.enabled = on; saveDb(); lastWant = null; if (on) runSchedule(true); else broadcast(status());
+  db.schedule.enabled = on; saveDb(); lastWant = null; if (on) runSchedule(true); else { updateSchedBright(); broadcast(status()); }
   log(`Schedule turned ${on ? 'on' : 'off'} from Home Assistant`);
 }
 // Save new settings (already cleaned) and apply what can change live. Returns true when the layout changed (restart).
+let setTimer = null;
+function saveSettingsSoon() { clearTimeout(setTimer); setTimer = setTimeout(() => { try { fs.mkdirSync(CFG.dataDir, { recursive: true }); const cur = JSON.parse(fs.existsSync(SETTINGS_FILE) ? fs.readFileSync(SETTINGS_FILE, 'utf8') : '{}'); cur.level = settings.level; fs.writeFileSync(SETTINGS_FILE + '.tmp', JSON.stringify(cur, null, 1)); fs.renameSync(SETTINGS_FILE + '.tmp', SETTINGS_FILE); } catch (e) { log('Could not save the even brightness setting -', e.message); } }, 500); }
 function applySettings(next) {
   const restart = LAYOUT_KEYS.some((k) => next[k] !== LAYOUT[k]);
   fs.mkdirSync(CFG.dataDir, { recursive: true });
@@ -644,6 +751,7 @@ function applySettings(next) {
   settings.dither = next.dither;   // applies to the next frame, no restart
   if (next.fpsAuto !== (settings.fpsAuto !== false) || next.fpsMax !== fpsCfg().max) setFpsTarget(null); // measure again
   settings.fpsAuto = next.fpsAuto; settings.fpsMax = next.fpsMax;
+  settings.level = next.level; // live, no restart
   const mqttChanged = JSON.stringify(next.mqtt) !== JSON.stringify(settings.mqtt);
   settings.mqtt = next.mqtt; if (mqttChanged && ha) ha.restart();
   return restart;
@@ -698,6 +806,11 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, db.playlist);
     }
     if (p === '/api/player' && req.method === 'POST') { const st = playerAction(await readBody(req)); return send(res, 200, st); }
+    if (p === '/api/level' && req.method === 'PUT') { // Settings -> Even brightness: live while dragging, saved
+      const b = await readBody(req), v = Math.round(+b.avg);
+      if (!(v >= 2 && v <= 60)) return send(res, 400, { error: 'Even brightness average should be between 2% and 60%.' });
+      settings.level = { on: b.on !== false, avg: v }; saveSettingsSoon(); return send(res, 200, { level: settings.level });
+    }
     if (p === '/api/brightness' && req.method === 'PUT') { const st = setBright(+(await readBody(req)).value); return send(res, 200, st); }
     if (p === '/api/schedule' && req.method === 'GET') { const sc = db.schedule || { enabled: false, entries: [] }; return send(res, 200, { schedule: sc, now: nowInfo(), status: scheduleStatus(), conflicts: scheduleConflicts(sc), plan: schedulePlan(sc, planDays(sc)) }); }
     if (p === '/api/schedule/check' && req.method === 'POST') { const sc = cleanSchedule(await readBody(req)); return send(res, 200, { conflicts: scheduleConflicts(sc), plan: schedulePlan(sc, planDays(sc)), sun: (() => { const keep = db.schedule; db.schedule = sc; try { return sunToday(); } finally { db.schedule = keep; } })() }); }
@@ -754,7 +867,7 @@ const watchers = new Set();
 let liveTick = 0; const liveView = Buffer.alloc(E.N * 3);
 const INV_GAMMA = new Uint8Array(256); for (let i = 0; i < 256; i++) INV_GAMMA[i] = Math.round(255 * Math.pow(i / 255, 1 / E.CONFIG.gamma));
 function liveToView(data, out) {
-  const k = Math.pow(masterBright(), 0.4);
+  const k = Math.pow(baseBright(), 0.4);
   for (let q = 0; q < E.N; q++) { const w = E.WIDX[q], o = q * 3; if (w < 0 || w * 3 + 2 >= data.length) { out[o] = out[o + 1] = out[o + 2] = 0; continue; }
     out[o] = Math.round(INV_GAMMA[data[w * 3]] * k); out[o + 1] = Math.round(INV_GAMMA[data[w * 3 + 1]] * k); out[o + 2] = Math.round(INV_GAMMA[data[w * 3 + 2]] * k); }
   return out;
