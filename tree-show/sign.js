@@ -105,11 +105,8 @@ function signShapes(link) {
   }
   const [hx, hy, hs] = c.hole, pad = hs * 0.1;
   tvShapes(sh, qx + (hx + Q + pad) * mod, qy + (hy + Q + pad) * mod, (hs - 2 * pad) * mod);
-  pixelText(sh, 'SCAN ME', SW / 2, qy + size + 6, 2.4);
-  const shown = String(link).replace(/^https?:\/\//, '').replace(/\/$/, '').toUpperCase();
-  const px = Math.min(1.4, (SW - 24) / (shown.length * 6));
-  pixelText(sh, shown, SW / 2, qy + size + 27, px);
-  pixelText(sh, 'TREE-MOTE CONTROL', SW / 2, qy + size + 27 + px * 7 + 5, 1.1);
+  pixelText(sh, 'SCAN ME', SW / 2, qy + size + 8, 2.8);
+  pixelText(sh, 'TREE-MOTE CONTROL', SW / 2, qy + size + 36, 1.3);   // (no web address: the code is enough)
   return sh;
 }
 // rounded rectangle path (y down), for SVG; the ring is two of them, the inner one wound the other way (even-odd)
@@ -179,9 +176,7 @@ function printLayout(link) {
   const [hx, hy, hs] = c.hole, pad = hs * 0.1, tv = [];
   tvShapes(tv, qx + (hx + Q + pad) * mod, qy + (hy + Q + pad) * mod, (hs - 2 * pad) * mod);
   tv.forEach((s, i) => (i === 6 || i === 7 ? green : red).push(s));   // the tree and its trunk green, the TV red
-  green.push({ k: 'text', s: 'SCAN ME', cx, top: qy + size + 6, h: 12, maxw: PW3 - 30 });
-  const shown = String(link).replace(/^https?:\/\//, '').replace(/\/$/, '');
-  green.push({ k: 'text', s: shown, cx, top: qy + size + 25, h: 7, maxw: PW3 - 24 });
+  green.push({ k: 'text', s: 'SCAN ME', cx, top: qy + size + 9, h: 15, maxw: PW3 - 30 }); // (no web address: the code is enough)
   return { w: PW3, h: PH3, holes: [[cx, 8.5], [cx, PH3 - 8.5]], slots: [[cx - 15, 8.5], [cx + 15, 8.5], [cx - 15, PH3 - 8.5], [cx + 15, PH3 - 8.5]], red, green };
 }
 
