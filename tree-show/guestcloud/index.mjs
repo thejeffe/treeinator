@@ -111,7 +111,10 @@ function meters(a, b, c, d) {
   const R = 6371000, r = Math.PI / 180, x = Math.sin((c - a) * r / 2), y = Math.sin((d - b) * r / 2);
   return 2 * R * Math.asin(Math.sqrt(x * x + Math.cos(a * r) * Math.cos(c * r) * y * y));
 }
-function far(m) { return m < 1000 ? Math.round(m / 10) * 10 + ' m' : m < 10000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m / 1000) + ' km'; }
+function far(m) { // in feet and miles: "800 ft", "2.1 miles", "14 miles"
+  const ft = m * 3.28084, mi = m / 1609.344;
+  return ft < 1000 ? Math.max(10, Math.round(ft / 10) * 10) + ' ft' : mi < 10 ? mi.toFixed(1) + ' miles' : Math.round(mi) + ' miles';
+}
 function reply(code, body, cache) {
   return { statusCode: code, headers: { 'content-type': 'application/json', 'cache-control': cache || 'no-store' }, body: JSON.stringify(body) };
 }

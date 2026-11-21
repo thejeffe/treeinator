@@ -29,7 +29,7 @@ function clean(g, old) {
     url, key: g.clearKey ? '' : g.key ? String(g.key).trim().slice(0, 200) : old.key || '', sec, fav: String(pick('fav') || '').slice(0, 40),
     title: String(pick('title') || DEFAULTS.title).trim().slice(0, 40) || DEFAULTS.title,
     lineMin: lim('lineMin', 1, 60, 'Line length'),
-    geo: pick('geo') === true, radius: lim('radius', 30, 5000, 'Nearby distance (meters)'),
+    geo: pick('geo') === true, radius: (() => { const v = Math.round(+(pick('radius') == null ? DEFAULTS.radius : pick('radius'))); if (!(v >= 30 && v <= 5000)) throw new Error('Nearby distance should be between 100 and 16,000 feet.'); return v; })(), // metres inside; feet on the page
     qrLink: (() => { const v = String(pick('qrLink') || '').trim(); if (v && !/^https?:\/\/[^\s]{3,200}$/i.test(v)) throw new Error('The QR code link should start with https://'); return v; })(),
     anyTime: pick('anyTime') === true, // testing: take requests outside the schedule's hours too (the tree wakes for each)
   };
