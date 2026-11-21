@@ -1,7 +1,7 @@
 // Treeinator: an installable app that says so when the server is down.
 // Pages always come from the server (never an old copy of the app); only the offline screen and its GIF are kept here,
 // and shown when the server can't be reached or answers 502-504 (the web proxy is up but Treeinator isn't).
-const CACHE = 'treeinator-offline-v4', OFFLINE = '/offline.html', KEEP = [OFFLINE, '/offline.gif', '/icon-192.png'];
+const CACHE = 'treeinator-offline-v5', OFFLINE = '/offline.html', KEEP = [OFFLINE, '/offline.gif', '/icon-192.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(KEEP)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
