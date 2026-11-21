@@ -873,8 +873,8 @@ const server = http.createServer(async (req, res) => {
       frameRate: { target: Math.round(currentFps()), sending: Math.round(sendFps * 10) / 10, wled: wledFps }, wledDither, mqtt: ha ? ha.status() : null });
     if (p === '/api/settings' && req.method === 'PUT') {
       const next = cleanSettings(await readBody(req)), restart = applySettings(next);
-      send(res, 200, { settings: Object.assign({}, next, { mqtt: H.publicCfg(next.mqtt) }), restart });
-      if (restart) { log('Settings: tree layout changed, restarting to apply', JSON.stringify(Object.assign({}, next, { mqtt: H.publicCfg(next.mqtt) }))); setTimeout(shutdown, 300); }
+      send(res, 200, { settings: Object.assign({}, next, { mqtt: H.publicCfg(next.mqtt), guest: GQ.publicCfg(next.guest) }), restart }); // no passwords or keys back
+      if (restart) { log('Settings: tree layout changed, restarting to apply', JSON.stringify(Object.assign({}, next, { mqtt: H.publicCfg(next.mqtt), guest: GQ.publicCfg(next.guest) }))); setTimeout(shutdown, 300); }
       return;
     }
     if (p === '/api/wled' && req.method === 'GET') {
