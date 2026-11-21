@@ -11,11 +11,16 @@ h1{font-size:24px;margin:18px 0 6px;color:#f2c14e}
 p{margin:0 0 14px;color:#b9c3cc}
 button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:11px 22px;background:#f2c14e;color:#111;cursor:pointer}
 small{display:block;margin-top:12px;color:#7d8894}
+canvas{width:100%;max-width:320px;aspect-ratio:320/170;border-radius:16px;box-shadow:0 10px 40px #0008;touch-action:manipulation;cursor:pointer;display:block;margin:0 auto}
+canvas[hidden]{display:none}
+.btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+button.ghost{background:transparent;color:inherit;box-shadow:inset 0 0 0 2px currentColor}
 </style></head><body><main>
-<img src="/offline.gif" alt="The tree asleep, unplugged" width="320" height="240">
+<img id="pic" src="/offline.gif" alt="The tree asleep, unplugged" width="320" height="240">
+<canvas id="game" hidden aria-label="A little jumping game"></canvas>
 <h1>Someone unplugged the tree.</h1>
 <p>Treeinator isn’t answering right now. It’ll be back in a jiffy, and this page reloads by itself.</p>
-<button type="button" id="again">Try again</button>
+<div class="btns"><button type="button" id="play">Play while you wait</button> <button type="button" id="again" class="ghost">Try again</button></div>
 <small id="st">Checking every 5 seconds…</small>
 </main>
 <script>
@@ -27,4 +32,64 @@ function check() {
 setInterval(function () { n--; if (n <= 0) { n = 5; check(); } st.textContent = navigator.onLine === false ? 'Your phone is offline: check its Wi-Fi.' : 'Checking again in ' + n + ' s…'; }, 1000);
 document.getElementById('again').onclick = function () { st.textContent = 'Checking…'; check(); setTimeout(function () { location.reload(); }, 600); };
 window.addEventListener('online', check);
-</script></body></html>
+</script><script>
+window.GAME = { key: 'treeinator-dash-best', ground: '#1b2a1f', line: '#3d5a44', text: '#f2c14e', over: 'The tree tripped on its cord!',
+  sky: function (x, W, H, t) { x.fillStyle = '#0A0E15'; x.fillRect(0, 0, W, H); x.fillStyle = '#fff';
+    for (var i = 0; i < 30; i++) { var sx = ((i * 97 - t * 12) % W + W) % W, sy = (i * 37) % 120 + 4; x.globalAlpha = 0.3 + 0.5 * Math.abs(Math.sin(t * 2 + i)); x.fillRect(sx, sy, 2, 2); } x.globalAlpha = 1; },
+  hero: { w: 30, h: 44, draw: function (x, t, air, dead) {
+    var b = air ? 0 : Math.abs(Math.sin(t * 14)) * 2; x.translate(0, -b);
+    x.fillStyle = '#6b3f1f'; x.fillRect(12, -8, 6, 8);
+    x.fillStyle = '#2f9e44'; [[15, -44, 3, -30, 27, -30], [15, -34, 0, -18, 30, -18], [15, -24, -2, -6, 32, -6]].forEach(function (p) { x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(p[2], p[3]); x.lineTo(p[4], p[5]); x.fill(); });
+    x.fillStyle = '#f2c14e'; x.beginPath(); x.arc(15, -45, 3.5, 0, 7); x.fill();
+    var c = ['#e03131', '#f2c14e', '#4dabf7', '#f783ac']; for (var i = 0; i < 5; i++) { x.fillStyle = c[(i + Math.floor(t * 6)) % 4]; x.beginPath(); x.arc([9, 20, 6, 15, 25][i], [-30, -26, -15, -12, -16][i], 2, 0, 7); x.fill(); }
+    x.fillStyle = '#111'; if (dead) { x.font = '700 9px sans-serif'; x.fillText('x x', 8, -18); } else { x.fillRect(10, -22, 2, 3); x.fillRect(18, -22, 2, 3); }
+    x.strokeStyle = '#ccc'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(12, -2); x.quadraticCurveTo(-6, 2 + b, -22, -1 + Math.sin(t * 10) * 2); x.stroke(); x.fillStyle = '#ccc'; x.fillRect(-28, -4 + Math.sin(t * 10) * 2, 6, 5); } },
+  obs: [
+    { w: 20, h: 18, draw: function (x, w, h) { x.fillStyle = '#e03131'; x.fillRect(0, -h, w, h); x.fillStyle = '#f2c14e'; x.fillRect(w / 2 - 2, -h, 4, h); x.fillRect(0, -h / 2 - 2, w, 4); } },
+    { w: 26, h: 26, draw: function (x, w, h) { x.fillStyle = '#4dabf7'; x.fillRect(0, -h, w, h); x.fillStyle = '#fff'; x.fillRect(w / 2 - 2, -h, 4, h); x.fillRect(0, -h / 2 - 2, w, 4); x.beginPath(); x.arc(w / 2 - 4, -h - 3, 4, 0, 7); x.arc(w / 2 + 4, -h - 3, 4, 0, 7); x.fill(); } },
+    { w: 22, h: 32, draw: function (x, w, h) { x.fillStyle = '#eef2f5'; x.beginPath(); x.arc(11, -9, 10, 0, 7); x.arc(11, -24, 7, 0, 7); x.fill(); x.fillStyle = '#f08c00'; x.fillRect(11, -25, 7, 2); x.fillStyle = '#111'; x.fillRect(8, -27, 2, 2); x.fillRect(13, -27, 2, 2); } }
+  ] };
+// Play while you wait: a tiny jump-over-things runner, drawn on a canvas (no files needed, so it works offline)
+(function () {
+  var T = window.GAME, cv = document.getElementById('game'), pic = document.getElementById('pic'), btn = document.getElementById('play');
+  var W = 320, H = 170, G = 140, x = cv.getContext('2d'), dpr = Math.min(3, window.devicePixelRatio || 1);
+  cv.width = W * dpr; cv.height = H * dpr; x.scale(dpr, dpr);
+  var best = 0; try { best = +localStorage.getItem(T.key) || 0; } catch (e) {}
+  var s, raf = 0, last = 0;
+  function reset() { s = { y: 0, vy: 0, obs: [], next: 60, sp: 150, t: 0, score: 0, over: false, deco: [] }; }
+  function jump() {
+    if (!s || s.over) { reset(); return; }
+    if (s.y === 0) { s.vy = 420; }
+  }
+  function start() { pic.hidden = true; cv.hidden = false; btn.textContent = 'Jump'; reset(); last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+  btn.onclick = function () { if (cv.hidden) start(); else jump(); };
+  cv.addEventListener('pointerdown', function (e) { e.preventDefault(); jump(); });
+  addEventListener('keydown', function (e) { if (cv.hidden) return; if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); jump(); } });
+  function hit(o) { var px = 40, pw = T.hero.w - 8, py = G - s.y - T.hero.h + 4; return px + pw > o.x + 3 && px < o.x + o.w - 3 && py + T.hero.h - 6 > G - o.h; }
+  function loop(ts) {
+    var dt = last ? Math.min(0.05, (ts - last) / 1000) : 0; last = ts;
+    if (!s.over) {
+      s.t += dt; s.sp = 150 + s.t * 6; s.score += dt * 10;
+      s.vy -= 1300 * dt; s.y = Math.max(0, s.y + s.vy * dt); if (s.y === 0) s.vy = 0;
+      s.next -= s.sp * dt;
+      if (s.next <= 0) { var k = T.obs[Math.floor(Math.random() * T.obs.length)]; s.obs.push({ x: W + 10, w: k.w, h: k.h, k: k }); s.next = 140 + Math.random() * 160 + s.sp * 0.25; }
+      for (var i = s.obs.length - 1; i >= 0; i--) { var o = s.obs[i]; o.x -= s.sp * dt; if (o.x < -40) s.obs.splice(i, 1); else if (hit(o)) { s.over = true; if (s.score > best) { best = Math.floor(s.score); try { localStorage.setItem(T.key, best); } catch (e) {} } } }
+    }
+    draw(); raf = requestAnimationFrame(loop);
+  }
+  function draw() {
+    x.clearRect(0, 0, W, H); T.sky(x, W, H, s.t);
+    x.fillStyle = T.ground; x.fillRect(0, G, W, H - G);
+    x.strokeStyle = T.line; x.lineWidth = 2; x.beginPath(); x.moveTo(0, G + 1); x.lineTo(W, G + 1); x.stroke();
+    // ground speckles scroll by
+    x.fillStyle = T.line; for (var i = 0; i < 14; i++) { var gx = ((i * 53 - s.t * s.sp) % W + W) % W; x.fillRect(gx, G + 8 + (i * 7) % 18, 3 + (i % 3), 2); }
+    s.obs.forEach(function (o) { x.save(); x.translate(o.x, G); o.k.draw(x, o.w, o.h); x.restore(); });
+    x.save(); x.translate(40, G - s.y); T.hero.draw(x, s.t, s.y > 0, s.over); x.restore();
+    x.fillStyle = T.text; x.font = '700 13px system-ui,sans-serif'; x.textAlign = 'right';
+    x.fillText(String(Math.floor(s.score)).padStart(5, '0') + (best ? '   best ' + best : ''), W - 10, 20);
+    if (s.over) { x.textAlign = 'center'; x.font = '800 18px system-ui,sans-serif'; x.fillText(T.over, W / 2, 62); x.font = '600 12px system-ui,sans-serif'; x.fillText('tap to try again', W / 2, 82); }
+    else if (s.t < 2.2) { x.textAlign = 'center'; x.font = '600 12px system-ui,sans-serif'; x.fillText('tap to jump', W / 2, 62); }
+  }
+})();
+</script>
+</body></html>
