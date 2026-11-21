@@ -839,6 +839,11 @@ const server = http.createServer(async (req, res) => {
         if (r.ok) { settings.wledBlank = true; fs.mkdirSync(CFG.dataDir, { recursive: true }); fs.writeFileSync(SETTINGS_FILE, JSON.stringify(Object.assign(currentSettings(), { wledBlank: true }), null, 1)); } return send(res, r.ok ? 200 : 502, r.ok ? r : Object.assign({ error: 'WLED didn’t take all the settings. Check it’s reachable and try again.' }, r)); }
       catch (e) { return send(res, 502, { error: `Couldn’t reach WLED at ${CFG.wledHost}: ${e.message}` }); }
     }
+    if (p === '/api/restart' && req.method === 'POST') {
+      // Settings -> Restart tree-show. systemd (Restart=always) starts it again; JSON-only so a plain web form elsewhere can't trigger it
+      if (!/^application\/json/i.test(req.headers['content-type'] || '')) return send(res, 415, { error: 'Send JSON.' });
+      log('Restart asked for from the web page'); send(res, 200, { ok: true, restarting: true }); setTimeout(shutdown, 300); return;
+    }
     if (p === '/api/version') return send(res, 200, { build: BUILD });
     if (p === '/config.js') return send(res, 200, `window.TREE_CONFIG=${JSON.stringify(LAYOUT)};`, 'text/javascript; charset=utf-8');
     if (p.startsWith('/api/')) return send(res, 404, { error: 'Not found' });

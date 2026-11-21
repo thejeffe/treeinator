@@ -526,7 +526,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
    <p class="note wide" id="sMqNote"></p>
   </fieldset>
   <div class="msg" id="sMsg" role="status"></div>
-  <div class="acts"><button type="button" class="left" id="sCancel">Cancel</button><button type="submit" class="pri" id="sSave">Save</button></div>
+  <div class="acts"><button type="button" class="left" id="sRestart" title="Restart the tree-show server (the tree blinks off for a few seconds)">Restart tree-show</button><button type="button" id="sCancel">Cancel</button><button type="submit" class="pri" id="sSave">Save</button></div>
  </form>
 </dialog>
 <script src="config.js"></script>
@@ -864,9 +864,14 @@ document.querySelectorAll('#viewSeg button[data-v]').forEach(function(b){b.addEv
   $('sSave').disabled=true;say(sMsg,'Saving…');
   Store.api('PUT','api/settings',v).then(function(j){
    if(!j.restart){$('sSave').disabled=false;dlg.close();say(msg,'Settings saved. Sending to '+j.settings.wledHost+'.');return}
-   say(sMsg,'Saved. Restarting tree-show with the new layout…');
-   var tries=0;(function wait(){setTimeout(function(){fetch('health',{cache:'no-store'}).then(function(r){if(r.ok)location.reload();else throw 0}).catch(function(){if(++tries<30)wait();else{$('sSave').disabled=false;say(sMsg,'tree-show hasn’t come back. Check: journalctl -u tree-show',true)}})},tries?1000:2500)})()
+   say(sMsg,'Saved. Restarting tree-show with the new layout…');waitBack();
   }).catch(function(e){$('sSave').disabled=false;say(sMsg,e.message,true)})});
+ // after a restart: wait for tree-show to answer again, then reload the page
+ function waitBack(){var tries=0;(function wait(){setTimeout(function(){fetch('health',{cache:'no-store'}).then(function(r){if(r.ok)location.reload();else throw 0}).catch(function(){if(++tries<30)wait();else{$('sSave').disabled=false;$('sRestart').disabled=false;say(sMsg,'tree-show hasn’t come back. Check: journalctl -u tree-show',true)}})},tries?1000:2500)})()}
+ $('sRestart').addEventListener('click',function(){
+  if(!confirm('Restart tree-show? The tree goes dark for a few seconds, then picks up where it was.'))return;
+  $('sRestart').disabled=true;$('sSave').disabled=true;say(sMsg,'Restarting tree-show…');
+  Store.api('POST','api/restart',{}).then(waitBack).catch(function(e){$('sRestart').disabled=false;$('sSave').disabled=false;say(sMsg,e.message,true)})});
 })();
 document.querySelectorAll('#subtabs button').forEach(function(b){b.addEventListener('click',function(){app.dataset.sub=b.dataset.s;document.querySelectorAll('#subtabs button').forEach(function(o){o.setAttribute('aria-pressed',o===b?'true':'false')})})});
 
