@@ -12,7 +12,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { checkMessage } from './words.mjs';
 
 const QUEUE_MAX = 30;            // waiting requests
-const GAP_MS = 60 * 1000;        // one request per phone (address) per minute, and one waiting at a time
+const PER_GUEST = 3;             // each phone (address): up to 3 waiting at once,
+const WINDOW_MS = 4 * 60 * 1000; // and up to 3 sent in any 4 minutes
 const TREE_STALE_MS = 30 * 1000; // no word from the tree for this long: requests are closed
 const COLOR = /^#[0-9a-f]{6}$/;
 
@@ -85,13 +86,14 @@ function guestId(ev) { // a hash of the guest's address (never stored as is)
 }
 function treeOpen(q, now) { return q.open && now - q.seen < TREE_STALE_MS; }
 // What everyone may see: no addresses or tickets.
-function publicQueue(q, now, t) {
+function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
+  const isMine = (x) => !!mine && mine.has(x);
   const open = treeOpen(q, now);
   return {
     open, reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
     sec: q.sec,
-    now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: !!t && q.now.t === t } : null,
-    items: q.items.map((it, i) => ({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: !!t && it.t === t })),
+    now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
+    items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
   };
 }
 
@@ -112,8 +114,9 @@ export async function handler(ev) {
 
     if (path === '/api/queue' && method === 'GET') {
       const q = (await store.get('queue')) || { d: EMPTY() };
-      const t = ((ev.queryStringParameters || {}).t || '').slice(0, 40); // the guest's own ticket: marks their request
-      return reply(200, publicQueue(q.d, now, t));
+      // the guest's own tickets (t=a,b,c): marks their requests
+      const mine = new Set(String((ev.queryStringParameters || {}).t || '').split(',').slice(0, PER_GUEST + 2).map((x) => x.slice(0, 40)).filter(Boolean));
+      return reply(200, publicQueue(q.d, now, mine));
     }
     if (path === '/api/catalog' && method === 'GET') {
       const c = await store.get('catalog');
@@ -152,12 +155,19 @@ async function request(ev, b, now) {
   const who = guestId(ev), t = randomBytes(12).toString('base64url');
   const out = await update('queue', (q) => {
     if (!treeOpen(q, now)) throw httpError(409, publicQueue(q, now).reason);
-    for (const k in q.rate) if (now - q.rate[k] > GAP_MS) delete q.rate[k];
-    if (q.items.some((x) => x.who === who)) throw httpError(429, 'You already have a request waiting. Once it’s on the tree you can pick another.');
-    if (q.rate[who]) throw httpError(429, 'One request a minute, please. Try again in a moment.');
+    for (const k in q.rate) { // times each guest sent a request, within the window
+      const v = (Array.isArray(q.rate[k]) ? q.rate[k] : [q.rate[k]]).filter((x) => now - x < WINDOW_MS);
+      if (v.length) q.rate[k] = v; else delete q.rate[k];
+    }
+    if (q.items.filter((x) => x.who === who).length >= PER_GUEST) throw httpError(429, `You have ${PER_GUEST} waiting already. Once one is on the tree you can add another.`);
+    const sent = q.rate[who] || [];
+    if (sent.length >= PER_GUEST) {
+      const wait = Math.ceil((sent[0] + WINDOW_MS - now) / 1000);
+      throw httpError(429, `That’s ${PER_GUEST} in 4 minutes. You can send another in ${wait < 60 ? wait + ' seconds' : Math.ceil(wait / 60) + ' min'}.`);
+    }
     if (q.items.length >= QUEUE_MAX) throw httpError(429, 'The queue is full right now. Try again in a few minutes.');
     q.items.push({ t, who, id: d.id, name: d.name, colors, msg: m.text, at: now });
-    q.rate[who] = now;
+    q.rate[who] = sent.concat(now);
     return { pos: q.items.length };
   }, EMPTY);
   return reply(200, { ok: true, t, pos: out.pos, msg: m.text });

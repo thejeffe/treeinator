@@ -161,8 +161,10 @@ canvas{width:108px;height:144px;display:block;border-radius:9px;background:#0508
 'use strict';
 var $ = function (id) { return document.getElementById(id); };
 var PAL = [['#ff1a1a','Red'],['#ff7a00','Orange'],['#ffd400','Gold'],['#2ee66b','Green'],['#00c8ff','Ice'],['#2b5cff','Blue'],['#8a2bff','Purple'],['#ff4fd8','Pink'],['#ffffff','White']];
-var CAT = null, E = null, G = null, sel = null, colors = [], ticket = null, curCat = null, lineOpen = false;
-try { ticket = localStorage.getItem('treeTicket'); } catch (e) {}
+var CAT = null, E = null, G = null, sel = null, colors = [], tickets = [], curCat = null, lineOpen = false;
+var PER_GUEST = 3; // requests one phone can have waiting
+try { tickets = JSON.parse(localStorage.getItem('treeTickets') || '[]').filter(function (t) { return typeof t === 'string'; }).slice(-6); } catch (e) {}
+function saveTickets() { try { localStorage.setItem('treeTickets', JSON.stringify(tickets)); } catch (e) {} }
 var ALLOWED = /^[A-Z0-9 !?.,'\-&*+#:♥]*$/;
 
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -185,26 +187,33 @@ function drawQueue(q) {
   else if (q.now) t = '<b>' + esc(q.now.name) + '</b>' + swatches(q.now.colors) + (q.now.msg ? ' “' + showMsg(q.now.msg) + '”' : '') + '<small>' + (q.now.mine ? 'Yours! 🎄 ' : 'A guest’s pick · ') + q.now.left + ' s left</small>';
   else t = '<b>The tree’s own show</b><small>Yours could be next!</small>';
   $('nowTxt').innerHTML = t;
-  var mine = -1;
+  var mine = [];
   $('q').innerHTML = q.items.map(function (it, i) {
-    if (it.mine) mine = i;
-    return '<li class="' + (it.mine ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><span><b>' + esc(it.name) + '</b>' + swatches(it.colors) + (it.msg ? ' <small>“' + showMsg(it.msg) + '”</small>' : '') + '</span>' + (it.mine ? '<button class="x" type="button" data-cancel>Cancel</button>' : '') + '</li>';
+    if (it.mine) mine.push(i);
+    return '<li class="' + (it.mine ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><span><b>' + esc(it.name) + '</b>' + swatches(it.colors) + (it.msg ? ' <small>“' + showMsg(it.msg) + '”</small>' : '') + '</span>' + (it.mine ? '<button class="x" type="button" data-cancel="' + esc(it.t) + '">Cancel</button>' : '') + '</li>';
   }).join('');
-  var c = $('q').querySelector('[data-cancel]'); if (c) c.onclick = cancel;
+  $('q').querySelectorAll('[data-cancel]').forEach(function (c) { c.onclick = function () { cancel(c.dataset.cancel); }; });
+  // forget tickets that have played (or were cleared)
+  var live = q.items.filter(function (i) { return i.mine; }).map(function (i) { return i.t; });
+  var playing = !!(q.now && q.now.mine); // the one on the tree has left the line: keep it until it's done
+  var keep = tickets.filter(function (t) { return live.indexOf(t) >= 0 || playing; });
+  if (keep.length !== tickets.length) { tickets = keep; saveTickets(); }
+  myCount = mine.length;
   $('lineBtn').classList.toggle('hide', !q.items.length);
   $('lineBtn').textContent = q.items.length + ' waiting ' + (lineOpen ? '▴' : '▾');
-  $('q').classList.toggle('hide', !q.items.length || !(lineOpen || mine >= 0));
-  if (mine >= 0) {
-    var wait = (q.now ? q.now.left : 0) + mine * (q.sec || 45);
-    say('You’re number ' + (mine + 1) + ' in line · about ' + (wait < 60 ? 'less than a minute' : Math.round(wait / 60) + ' min'), true);
-  } else if (q.now && q.now.mine) say('That’s yours on the tree now! 🎄', true);
-  else if (ticket) { ticket = null; try { localStorage.removeItem('treeTicket'); } catch (e) {} say(''); }
+  $('q').classList.toggle('hide', !q.items.length || !(lineOpen || mine.length));
+  if (q.now && q.now.mine) say('That’s yours on the tree now! 🎄' + (mine.length ? ' · ' + mine.length + ' more in line' : ''), true);
+  else if (mine.length) {
+    var wait = (q.now ? q.now.left : 0) + mine[0] * (q.sec || 45);
+    say((mine.length > 1 ? 'You have ' + mine.length + ' in line: number ' + mine.map(function (i) { return i + 1; }).join(', ') : 'You’re number ' + (mine[0] + 1) + ' in line') + ' · next in about ' + (wait < 60 ? 'less than a minute' : Math.round(wait / 60) + ' min'), true);
+  } else if ($('err').className === 'ok') say('');
   setGo();
 }
 $('lineBtn').onclick = function () { lineOpen = !lineOpen; this.setAttribute('aria-expanded', String(lineOpen)); if (lastQ) drawQueue(lastQ); };
-function poll() { fetch('api/queue' + (ticket ? '?t=' + encodeURIComponent(ticket) : ''), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(drawQueue).catch(function () {}); }
-function cancel() {
-  api('cancel', { t: ticket }).then(function () { ticket = null; try { localStorage.removeItem('treeTicket'); } catch (e) {} say('Cancelled.'); poll(); }).catch(function (e) { say(e.message); });
+var myCount = 0;
+function poll() { fetch('api/queue' + (tickets.length ? '?t=' + encodeURIComponent(tickets.join(',')) : ''), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(drawQueue).catch(function () {}); }
+function cancel(t) {
+  api('cancel', { t: t }).then(function () { tickets = tickets.filter(function (x) { return x !== t; }); saveTickets(); say('Cancelled.'); poll(); }).catch(function (e) { say(e.message); });
 }
 
 // ---------- picking: a row of categories (favorites first), a row of designs ----------
@@ -277,17 +286,17 @@ $('msg').oninput = function () {
   restartPreview(); setGo();
 };
 $('heart').onclick = function () { var m = $('msg'); if (m.value.length < 24) { m.value += '♥'; m.oninput(); } };
-function inLine() { return !!(ticket && lastQ && lastQ.items.some(function (i) { return i.mine; })); }
+function inLine() { return myCount >= PER_GUEST; }
 function setGo() {
   var b = $('go'), open = lastQ && lastQ.open, v = msgVal();
   b.disabled = !sel || !open || !ALLOWED.test(v) || inLine();
-  b.textContent = !open ? 'The tree is resting' : inLine() ? 'You’re in line' : !sel ? 'Pick a design' : 'Put it on the tree';
+  b.textContent = !open ? 'The tree is resting' : inLine() ? 'You have ' + PER_GUEST + ' in line' : !sel ? 'Pick a design' : myCount ? 'Add it to the line' : 'Put it on the tree';
 }
 $('go').onclick = function () {
   if (!sel) return;
   var b = $('go'); b.disabled = true; b.textContent = 'Sending…';
   api('request', { id: sel.id, colors: colors, msg: msgVal().replace(/♥/g, '<') }).then(function (j) {
-    ticket = j.t; try { localStorage.setItem('treeTicket', ticket); } catch (e) {}
+    tickets.push(j.t); tickets = tickets.slice(-6); saveTickets(); myCount++;
     say('You’re in line! Number ' + j.pos + '.', true); celebrate(); poll();
   }).catch(function (e) { say(e.message); setGo(); });
 };
