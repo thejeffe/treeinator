@@ -79,6 +79,7 @@ button:disabled{opacity:.45;cursor:default}
 input[type=range]{width:100%;min-width:0;accent-color:var(--accent);margin:0}
 .gqr{grid-column:1/-1;font-size:13px}.gqrrow{display:flex;gap:12px;align-items:center;margin-top:6px}.gqrrow img{background:#fff;border-radius:6px;flex:none}
 .gact{grid-column:1/-1;font-size:13px}.gact .seg3 button{font:inherit;font-size:12px;padding:1px 8px;margin:0 2px;border-radius:6px}.gact .seg3 button[aria-pressed=true]{font-weight:700;outline:2px solid currentColor}
+.garef{font:inherit;font-size:14px;line-height:1;padding:1px 7px;border-radius:6px;vertical-align:1px}
 .galist .gsw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:3px;vertical-align:-1px;border:1px solid #0004}
 .galist{max-height:320px;overflow:auto;margin-top:6px;border-top:1px solid var(--rule)}.galist .v{padding:6px 0;border-bottom:1px solid var(--rule)}.galist .v small{color:var(--mute,#888)}.galist .ok{color:#2a8a4a}.galist .bad{color:#b3412f}
 .gql{grid-column:1/-1;list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;font-size:13px}.gql li{padding:4px 0;border-bottom:1px solid var(--rule)}.gql li.now{font-weight:600}.gql .n{display:inline-block;min-width:1.6em;color:var(--mute,#888)}.gql .gsw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:3px;vertical-align:-1px;border:1px solid #0004}.gql button{float:right;font:inherit;font-size:12px;padding:0 7px;margin-left:6px}.gql small{color:var(--mute,#888)}
@@ -555,7 +556,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
      <a href="#" id="sGqPng">Download QR (PNG)</a><br>
      <a id="sGqPdf" href="api/guest/sign.pdf?download=1" download>Download the sign (PDF)</a><br>
      <small>Print the sign for the yard: it welcomes people walking by and has the QR code. Save the link first if you changed it.</small></div></div></div>
-   <div class="wide gact"><b>Activity</b> <span class="seg3" id="sGaDays"><button type="button" data-d="1">Today</button><button type="button" data-d="7" aria-pressed="true">7 days</button><button type="button" data-d="30">30 days</button></span> <a href="api/guest/log" download>Download the log</a>
+   <div class="wide gact"><b>Activity</b> <span class="seg3" id="sGaDays"><button type="button" data-d="1">Today</button><button type="button" data-d="7" aria-pressed="true">7 days</button><button type="button" data-d="30">30 days</button></span> <button type="button" id="sGaRef" class="garef" title="Refresh the activity" aria-label="Refresh the activity">&#x21bb;</button> <a href="api/guest/log" download>Download the log</a> <small id="sGaAt"></small>
     <div id="sGaList" class="galist"><small>Loading…</small></div></div>
    <div class="wide" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="sGqSkip">Skip the one playing</button><button type="button" id="sGqClear">Clear the line</button><a id="sGqOpen" href="external/" target="_blank" rel="noopener">Open the guest page</a></div>
   </fieldset>
@@ -874,7 +875,7 @@ document.querySelectorAll('#viewSeg button[data-v]').forEach(function(b){b.addEv
  function gaWhen(t){var d=new Date(t);return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+', '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}
  function gaTime(t){return new Date(t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}
  var GA_OUT={done:['played','ok'],played:['playing','ok'],skipped:['played, skipped by you','ok'],cut:['played, cut short','ok'],removed:['removed by you','bad'],dropped:['couldn\u2019t play (design gone)','bad'],cancelled:['cancelled by them','bad'],waiting:['waiting / never played','bad']};
- function guestActivity(){fetch('api/guest/activity?days='+gaDays,{cache:'no-store'}).then(function(r){return r.json()}).then(function(j){var v=j.visits||[];$('sGaList').innerHTML=v.length?v.map(function(x){
+ function guestActivity(){fetch('api/guest/activity?days='+gaDays,{cache:'no-store'}).then(function(r){return r.json()}).then(function(j){var v=j.visits||[];$('sGaAt').textContent='updated '+new Date().toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit',second:'2-digit'});$('sGaList').innerHTML=v.length?v.map(function(x){
   var h='<div class="v"><b>'+gaWhen(x.start)+'</b> <small>\u00b7 visitor '+gqEsc(x.visitor)+' \u00b7 '+gqEsc(x.dev||'')+(x.dist!=null?' \u00b7 '+(x.dist<1000?x.dist+' m':(x.dist/1000).toFixed(1)+' km')+' away':'')+(x.geo?' \u00b7 '+gqEsc(x.geo):'')+(x.shared?' \u00b7 shared the link':'')+'</small>';
   if(x.looked.length)h+='<br><small>Looked at:</small> '+x.looked.slice(0,8).map(gqEsc).join(', ')+(x.looked.length>8?' (+'+(x.looked.length-8)+')':'');
   x.sent.forEach(function(s){var o=GA_OUT[s.outcome]||[s.outcome,''];h+='<br>Sent '+gqEsc(s.name)+gqSw(s.colors)+(s.msg?' \u201c'+gqEsc(s.msg).replace(/&lt;/g,'\u2665')+'\u201d':'')+' <small>'+gaTime(s.at)+'</small> \u2192 <span class="'+o[1]+'">'+o[0]+(s.played?' '+gaTime(s.played):'')+'</span>'});
@@ -883,6 +884,8 @@ document.querySelectorAll('#viewSeg button[data-v]').forEach(function(b){b.addEv
   return h+'</div>'}).join(''):'<small>No guest visits in this time.</small>'}).catch(function(){$('sGaList').innerHTML='<small>Couldn\u2019t load the activity.</small>'})}
  $('sGaDays').onclick=function(e){var b=e.target.closest('button');if(!b)return;gaDays=+b.dataset.d;this.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});guestActivity()};
  $('sTabs').addEventListener('click',function(e){var b=e.target.closest('button[data-t="guest"]');if(b)guestActivity()});
+ $('sGaRef').onclick=guestActivity;
+ setInterval(function(){var l=$('sGaList');if(l&&l.offsetParent)guestActivity()},15000); // every 15 s while the Guests tab is open
  $('sGqSkip').onclick=function(){fetch('api/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"action":"skip"}'}).then(guestStat)};
  $('sGqClear').onclick=function(){if(confirm('Clear everyone waiting in the line?'))fetch('api/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"action":"clear"}'}).then(function(){setTimeout(guestStat,500)})};
  var lvT=0;function lvSend(){$('sLvOut').textContent=$('sLv').value+'%';$('sLv').disabled=!$('sLvOn').checked;clearTimeout(lvT);lvT=setTimeout(function(){Store.api('PUT','api/level',{on:$('sLvOn').checked,avg:+$('sLv').value}).catch(function(e){say(sMsg,e.message,true)})},120)}
