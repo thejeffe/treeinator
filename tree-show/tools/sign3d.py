@@ -125,9 +125,39 @@ parts = {'white': to_mesh(base, [240, 240, 240, 255]), 'red': to_mesh(red, [200,
 for name, m in parts.items():
     assert m.is_watertight, name + ' is not watertight'
     m.export(os.path.join(out, f'sign-{name}.stl'))
-scene = trimesh.Scene()
-for name, m in parts.items(): scene.add_geometry(m, node_name=f'sign-{name}', geom_name=f'sign-{name}')
-scene.export(os.path.join(out, 'sign.3mf'))
+# ---- a Bambu Studio project 3MF: one object of three parts, each part on its own filament (1 white, 2 red, 3 green).
+# Bambu Studio reads the parts' filaments from Metadata/model_settings.config (its own format); the meshes are plain 3MF.
+import zipfile
+def mesh_xml(m):
+    v = '\n'.join(f'<vertex x="{x:.4f}" y="{y:.4f}" z="{z:.4f}"/>' for x, y, z in m.vertices)
+    t = '\n'.join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in m.faces)
+    return f'<mesh><vertices>\n{v}\n</vertices><triangles>\n{t}\n</triangles></mesh>'
+order = [('white', 1, 'white base'), ('red', 2, 'red letters and TV'), ('green', 3, 'green QR code and text')]
+objs = ''.join(f'<object id="{i + 1}" type="model">{mesh_xml(parts[n])}</object>\n' for i, (n, _, _) in enumerate(order))
+comps = ''.join(f'<component objectid="{i + 1}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>' for i in range(len(order)))
+X0, Y0 = 8.0, (256 - H) / 2                                # on a 256 mm plate: the sign at the left, the right strip for the prime tower
+model = ('<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
+         'xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">\n<metadata name="Application">BambuStudio-01.10.00.00</metadata>\n'
+         '<metadata name="BambuStudio:3mfVersion">1</metadata>\n<metadata name="Title">Tree-mote sign</metadata>\n<resources>\n' + objs +
+         f'<object id="{len(order) + 1}" type="model"><components>{comps}</components></object>\n</resources>\n'
+         f'<build><item objectid="{len(order) + 1}" transform="1 0 0 0 1 0 0 0 1 {X0} {Y0} 0" printable="1"/></build>\n</model>\n')
+settings = ('<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
+            f'  <object id="{len(order) + 1}">\n    <metadata key="name" value="Tree-mote sign"/>\n    <metadata key="extruder" value="1"/>\n' +
+            ''.join(f'    <part id="{i + 1}" subtype="normal_part">\n      <metadata key="name" value="{label}"/>\n'
+                    '      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
+                    f'      <metadata key="source_file" value="sign.3mf"/>\n      <metadata key="source_object_id" value="0"/>\n      <metadata key="source_volume_id" value="{i}"/>\n'
+                    f'      <metadata key="extruder" value="{ext}"/>\n    </part>\n' for i, (_, ext, label) in enumerate(order)) +
+            '  </object>\n  <plate>\n    <metadata key="plater_id" value="1"/>\n    <metadata key="plater_name" value=""/>\n    <metadata key="locked" value="false"/>\n'
+            f'    <model_instance>\n      <metadata key="object_id" value="{len(order) + 1}"/>\n      <metadata key="instance_id" value="0"/>\n      <metadata key="identify_id" value="1"/>\n    </model_instance>\n  </plate>\n</config>\n')
+types = ('<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+         '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+         '<Default Extension="png" ContentType="image/png"/></Types>\n')
+rels = ('<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>\n')
+with zipfile.ZipFile(os.path.join(out, 'sign.3mf'), 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('[Content_Types].xml', types); z.writestr('_rels/.rels', rels)
+    z.writestr('3D/3dmodel.model', model); z.writestr('Metadata/model_settings.config', settings)
 
 # ---- a top view, for checking (and the QR code must scan) ----
 from PIL import Image, ImageDraw
