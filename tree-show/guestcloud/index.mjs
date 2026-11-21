@@ -112,7 +112,7 @@ function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
   return {
     open, why: open ? null : now - q.seen >= TREE_STALE_MS ? 'offline' : q.why || 'closed', back: open ? null : q.back || null,
     reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
-    sec: q.sec, perGuest: share(q).max, busy: share(q).busy,
+    sec: q.sec, perGuest: share(q).max, busy: share(q).busy, cat: q.catHash || null, // cat: the design list's version
     now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
     items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
   };
@@ -141,7 +141,7 @@ export async function handler(ev) {
     }
     if (path === '/api/catalog' && method === 'GET') {
       const c = await store.get('catalog');
-      return reply(200, c ? c.d : { hash: null, designs: [], favorites: [], layout: null }, 'public, max-age=30');
+      return reply(200, c ? c.d : { hash: null, designs: [], favorites: [], layout: null }, 'public, max-age=30'); // pages ask with ?h=<hash> when it changed
     }
     if (path === '/api/request' && method === 'POST') return await request(ev, body, now);
     if (path === '/api/cancel' && method === 'POST') {
@@ -231,5 +231,7 @@ export async function treeSync(b, now) {
     return { items: q.items.map(({ t, id, name, colors, msg, at }) => ({ t, id, name, colors, msg, at })) };
   }, EMPTY);
   const cat = await store.get('catalog');
-  return reply(200, { items: out.items, catalogHash: cat ? cat.d.hash : null });
+  const h = cat ? cat.d.hash : null;
+  if (h) await update('queue', (q) => (q.catHash === h ? { skip: true } : (q.catHash = h, {})), EMPTY); // pages reload the list when it changes
+  return reply(200, { items: out.items, catalogHash: h });
 }

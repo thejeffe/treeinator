@@ -21,6 +21,8 @@ main{max-width:560px;margin:0 auto;padding:0 12px}
 .scene svg{position:absolute;inset:0;width:100%;height:100%}
 .scene h1{position:absolute;left:14px;bottom:12px;margin:0;font-size:22px;line-height:1.05;max-width:62%;text-shadow:0 2px 8px #000}
 .scene h1 span{color:var(--gold)}
+.reload{position:absolute;top:6px;left:8px;width:30px;height:30px;border-radius:50%;border:1px solid #ffffff30;background:#0008;color:#fff;font-size:16px;line-height:1;padding:0;z-index:3}
+.reload:active{transform:rotate(180deg)}
 /* now + line */
 .now{display:flex;gap:10px;align-items:center}
 .now .txt{flex:1;min-width:0}
@@ -212,6 +214,7 @@ body.closedMode .pupil{display:none}
  </g>
  </g><g class="zzz" fill="#cfd6ff" font-weight="800"><text x="362" y="128" font-size="7">z</text><text x="368" y="121" font-size="9">z</text><text x="375" y="113" font-size="11">Z</text></g><g transform="translate(344,118) scale(.6)"><g class="gift" id="gift"><rect x="-7" y="-7" width="14" height="12" rx="1.5" fill="#3bb3ff"/><rect x="-1.2" y="-7" width="2.4" height="12" fill="#ffd23b"/><path d="M0-7 q-6-6-6 0 m6 0 q6-6 6 0" stroke="#ffd23b" stroke-width="1.6" fill="none"/></g></g>
 </svg>
+<button type="button" class="reload" id="reload" title="Refresh" aria-label="Refresh the page">↻</button>
 <h1 id="title">Light Up the <span>Tree</span></h1>
 </div>
 <main>
@@ -262,6 +265,7 @@ function load(src) { return new Promise(function (ok, no) { var s = document.cre
 var lastQ = null;
 function drawQueue(q) {
   lastQ = q; if (q.perGuest) PER_GUEST = q.perGuest;
+  if (CAT && E && q.cat && q.cat !== CAT.hash) reloadCatalog(q.cat); // the tree's designs, favorites or name changed
   var why = q.open ? '' : q.why || 'closed', nc = $('nowCard');
   nc.className = 'card' + (q.open ? '' : ' closed ' + why);
   document.body.classList.toggle('closedMode', !q.open);
@@ -306,6 +310,23 @@ function cancel(t) {
 
 // ---------- picking: a row of categories (favorites first), a row of designs ----------
 var groups = {}, order = [];
+// A new design list from the tree: rebuild the rows, keeping the guest's category and pick when they still exist.
+var reloading = false;
+function reloadCatalog(h) {
+  if (reloading) return; reloading = true;
+  api('catalog?h=' + encodeURIComponent(h)).then(function (c) {
+    if (JSON.stringify(c.layout || {}) !== JSON.stringify(CAT.layout || {}) && !document.body.classList.contains('typing')) return location.reload(); // a new tree layout: start fresh
+    var keepCat = curCat, keepSel = sel && sel.id;
+    CAT = c; showTitle(c.title); groups = {}; order = []; $('cats').innerHTML = ''; buildLists();
+    if (keepCat && groups[keepCat]) showCat(keepCat);
+    if (keepSel && CAT.designs.some(function (d) { return d.id === keepSel; })) pick(keepSel); else if (keepSel) pick((groups[order[0]] || [])[0].id);
+    fit();
+  }).catch(function () {}).then(function () { reloading = false; });
+}
+function showTitle(t) {
+  if (!t) return; var w = t.split(' '), last = w.pop();
+  $('title').innerHTML = (w.length ? esc(w.join(' ')) + ' ' : '') + '<span>' + esc(last) + '</span>'; document.title = t;
+}
 function buildLists() {
   var byId = {}; CAT.designs.forEach(function (d) { byId[d.id] = d; });
   var favs = (CAT.favorites || []).map(function (id) { return byId[id]; }).filter(Boolean);
@@ -458,10 +479,7 @@ function tick(t) {
 
 api('catalog').then(function (c) {
   CAT = c; window.TREE_CONFIG = c.layout || {};
-  if (c.title) { // the name set in tree-show (Settings -> Guests); the last word in gold
-    var w = c.title.split(' '), last = w.pop();
-    $('title').innerHTML = (w.length ? esc(w.join(' ')) + ' ' : '') + '<span>' + esc(last) + '</span>'; document.title = c.title;
-  }
+  showTitle(c.title); // the name set in tree-show (Settings -> Guests); the last word in gold
   return load('engine.js').then(function () { return load('guestlook.js'); }).then(function () {
     E = window.TreeEngine; G = window.GuestLook; frame = new Float32Array(E.N * 3);
     buildLists();
@@ -471,7 +489,11 @@ api('catalog').then(function (c) {
     requestAnimationFrame(tick);
   });
 }).catch(function () { say('Couldn’t load the designs. Pull down to try again.'); });
-poll(); setInterval(poll, 4000);
+poll(); setInterval(function () { if (!document.hidden) poll(); }, 4000);
+// back from another app or a sleeping phone: catch up at once
+document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+window.addEventListener('pageshow', function (e) { if (e.persisted) poll(); });
+$('reload').onclick = function () { location.reload(); };
 </script>
 </body>
 </html>
