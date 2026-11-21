@@ -10,7 +10,7 @@ Needs: manifold3d, numpy, trimesh, Pillow.
 
 The plate is thin but stiff: 2.0 mm with a 4 mm wide, 4.4 mm tall rim (a rim makes a thin plate far stiffer and
 guards the raised parts). Letters, QR code and TV stand 0.8 mm (4 layers at 0.2 mm). Two countersunk holes on the
-centre line for #8 screws into the pipe, with a thicker pad round each; zip-tie slots either side as an alternative.
+centre line for M4 pan-head screws into the snap-on pipe clips (tools/clip3d.py), each on a thicker pad; zip-tie slots either side as an alternative.
 """
 import json, math, os, sys
 import numpy as np
@@ -22,7 +22,7 @@ from fontTools.pens.recordingPen import RecordingPen
 FONT = os.environ.get('SIGN_FONT', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf')   # smooth, bold, free licence
 
 PLATE, RIM_W, RIM_H, RAISE = 2.0, 4.0, 4.4, 0.8
-HOLE_D, HEAD_D, PAD_R, PAD_H = 4.4, 9.0, 8.0, 3.2         # #8 screw: clearance hole, countersink, pad round it
+HOLE_D, HEAD_D, PAD_R, PAD_H = 4.6, 10.0, 8.0, 3.2        # M4 pan washer head screw: clearance hole, head, pad it sits on
 SLOT_W, SLOT_H = 3.0, 5.5                                  # zip-tie slots (vertical, for a tie round the pipe)
 
 lay = json.load(sys.stdin)
@@ -105,9 +105,7 @@ for hx, hy in lay['holes']:
 cut = Manifold()
 for hx, hy in lay['holes']:
     cut = cut + Manifold.cylinder(PAD_H + 2, HOLE_D / 2, HOLE_D / 2, 48).translate([hx, yflip(hy), -1])
-    sink = (HEAD_D - HOLE_D) / 2                          # a 90-degree countersink from the top of the pad
-    cut = cut + Manifold.cylinder(sink + 0.01, HOLE_D / 2, HEAD_D / 2, 48).translate([hx, yflip(hy), PAD_H - sink])
-    cut = cut + Manifold.cylinder(1, HEAD_D / 2, HEAD_D / 2, 48).translate([hx, yflip(hy), PAD_H - 0.001])
+    # (no countersink: a pan washer head sits flat on the pad; the screw goes on into the pipe clip behind)
 for sx, sy in lay['slots']:
     cut = cut + Manifold.cube([SLOT_W, SLOT_H, PLATE + 2]).translate([sx - SLOT_W / 2, yflip(sy) - SLOT_H / 2, -1])
 base = base - cut
