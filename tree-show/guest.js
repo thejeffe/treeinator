@@ -13,7 +13,7 @@ const path = require('path');
 const https = require('https');
 const GL = require('./public/guestlook.js');
 
-const DEFAULTS = { enabled: false, paused: false, note: '', url: '', key: '', sec: 45, fav: '', title: 'Light Up the Tree', lineMin: 10, geo: false, radius: 200 };
+const DEFAULTS = { enabled: false, paused: false, note: '', url: '', key: '', sec: 45, fav: '', title: 'Light Up the Tree', lineMin: 10, geo: false, radius: 200, qrLink: '', anyTime: false };
 const SYNC_MS = 3000, FONT = /^[A-Z0-9 !?.,'\-&*+#:<]{0,24}$/;
 
 function clean(g, old) {
@@ -30,6 +30,8 @@ function clean(g, old) {
     title: String(pick('title') || DEFAULTS.title).trim().slice(0, 40) || DEFAULTS.title,
     lineMin: lim('lineMin', 1, 60, 'Line length'),
     geo: pick('geo') === true, radius: lim('radius', 30, 5000, 'Nearby distance (meters)'),
+    qrLink: (() => { const v = String(pick('qrLink') || '').trim(); if (v && !/^https?:\/\/[^\s]{3,200}$/i.test(v)) throw new Error('The QR code link should start with https://'); return v; })(),
+    anyTime: pick('anyTime') === true, // testing: take requests outside the schedule's hours too (the tree wakes for each)
   };
 }
 function publicCfg(g) { const c = Object.assign({}, DEFAULTS, g || {}); c.keySet = !!c.key; delete c.key; return c; }
@@ -84,6 +86,7 @@ function create(ctx) {
       if (e.k === 'pick' && e.name && !vs.looked.includes(e.name)) vs.looked.push(e.name);
       if (e.k === 'cat' && e.c && !vs.cats.includes(e.c)) vs.cats.push(e.c);
       if (e.k === 'geo-denied') vs.geo = 'refused to share location';
+      if (e.k === 'share') vs.shared = true;
       if (e.k === 'sent') {
         if (e.dist != null) vs.dist = e.dist;
         const what = byT[e.t] || [], pl = what.find((x) => x.k === 'played'), end = what.find((x) => x.k !== 'played');
@@ -114,6 +117,7 @@ function create(ctx) {
     const c = ctx.cfg();
     if (!c.enabled) return { open: false, why: 'closed', reason: 'The tree isn’t taking requests right now.' };
     if (c.paused) return { open: false, why: 'paused', reason: c.note || 'Requests are paused right now. Check back soon!' };
+    if (c.anyTime) { if (ctx.live()) return { open: false, why: 'live', reason: 'Someone’s playing the tree live right now. Check back in a minute.' }; return { open: true, reason: null }; }
     const s = ctx.scheduleOn();
     if (!s.on) return { open: false, why: 'resting', back: s.back || null, reason: s.back ? `The tree is resting. Requests open again ${s.back}.` : 'The tree is resting right now.' };
     if (!ctx.running()) return { open: false, why: 'closed', reason: 'The tree is off right now.' };
@@ -178,17 +182,19 @@ function create(ctx) {
     const c = ctx.cfg(), look = GL.guestLook(d.look, it.colors || [], msg);
     const name = d.name + (msg ? ' · “' + msg.replace(/</g, '♥') + '”' : '') + ' (guest)';
     const gd = { id: 'guest:' + it.t, name, look };
+    const woke = !ctx.running();                 // only with the testing override: the tree was off
     ctx.player.playDesign(gd, c.sec, true);
-    cur = { t: it.t, id: gd.id, ends: Date.now() + c.sec * 1000, name };
+    cur = { t: it.t, id: gd.id, ends: Date.now() + c.sec * 1000, name, woke: cur && cur.woke ? true : woke };
     note([{ at: Date.now(), k: 'played', t: it.t, name: d.name, msg }]);
     ctx.log(`Guest request: ${name}`);
     return true;
   }
   function finish(how) {
     if (cur) note([{ at: Date.now(), k: how || 'done', t: cur.t }]);
-    cur = null;
+    const woke = cur && cur.woke; cur = null;
     const st = state();
-    while (st.open && items.length) { if (start(items.shift())) return; }
+    while (st.open && items.length) { if (start(items.shift())) { if (woke) cur.woke = true; return; } }
+    if (woke) { ctx.player.stop(); return; }     // the override woke it: back to sleep
     if (!ctx.running()) return;
     const hold = ctx.holdDesign();
     if (hold) ctx.player.playDesign(hold, 60, true); else ctx.player.next(); // back to the held design or the playlist
@@ -197,7 +203,7 @@ function create(ctx) {
   async function tick() {
     if (cur) {
       const p = ctx.player.cur;
-      if (!p || p.d.id !== cur.id || !ctx.running()) { note([{ at: Date.now(), k: 'cut', t: cur.t }]); cur = null; return; } // someone played something else: the guest's turn ends
+      if (!p || p.d.id !== cur.id || !ctx.player.running) { note([{ at: Date.now(), k: 'cut', t: cur.t }]); cur = null; return; } // someone played something else: the guest's turn ends
       if (Date.now() >= cur.ends) { finish(cur.skip ? 'skipped' : 'done'); sync(true); }
       return;
     }
@@ -207,7 +213,7 @@ function create(ctx) {
   const timers = [];
   return {
     start() { timers.push(setInterval(() => sync(false), 1000), setInterval(tick, 500)); sync(true); },
-    sync, serveLocal,
+    sync, serveLocal, playing: () => !!cur,
     clear() { clearAsk = true; items = []; sync(true); },
     skip() { if (cur) { cur.skip = true; cur.ends = 0; tick(); } },
     remove(t) { t = String(t); items = items.filter((x) => x.t !== t); played.add(t); drop.push(t); note([{ at: Date.now(), k: 'removed', t }]); sync(true); }, // the owner takes one out of the line

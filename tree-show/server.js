@@ -37,6 +37,7 @@ const D = require('./dither.js');     // accurate colors when the tree is dim (S
 const ditherer = D.create(E);
 const H = require('./ha.js');      // Home Assistant over MQTT (Settings -> Home Assistant)
 const GQ = require('./guest.js');  // guest requests from a QR code (Settings -> Guests)
+const SIGN = require('./sign.js'); // its QR code and a printable sign
 let guest = null;
 const LAYOUT = E.CONFIG; // what the engine actually uses after validation
 function currentSettings() { const fc = fpsCfg(); return Object.assign({ wledHost: CFG.wledHost, wledPort: CFG.wledPort, wledPower: settings.wledPower !== false, wledBlank: !!settings.wledBlank, dither: D.clean(settings.dither), fpsAuto: fc.auto, fpsMax: fc.max, level: levelCfg(), mqtt: H.publicCfg(settings.mqtt), guest: GQ.publicCfg(settings.guest) }, LAYOUT); }
@@ -86,7 +87,7 @@ function cleanSettings(b) {
 const PUBLIC = path.join(__dirname, 'public');
 // Build id: changes whenever the installed code changes, so the page (and the iPad home-screen app) can tell it's out of date.
 const BUILD = (() => { const h = require('crypto').createHash('sha1');
-  for (const f of ['server.js', 'dither.js', 'ha.js', 'guest.js', 'public/index.html', 'public/engine.js', 'public/guestlook.js', 'guestcloud/index.mjs', 'guestcloud/words.mjs', 'guestcloud/site/index.html']) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (_) {} }
+  for (const f of ['server.js', 'dither.js', 'ha.js', 'guest.js', 'qr.js', 'sign.js', 'public/index.html', 'public/engine.js', 'public/guestlook.js', 'guestcloud/index.mjs', 'guestcloud/words.mjs', 'guestcloud/site/index.html']) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (_) {} }
   return h.digest('hex').slice(0, 10); })();
 // Home-screen app: manifest + Apple tags so "Add to Home Screen" on an iPad/iPhone opens tree-show full screen with its icon.
 const PAGE_HEAD = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0A0E15">'
@@ -418,7 +419,7 @@ function postJson(u, body) {
 }
 function syncWledPower() {
   if (settings.wledPower === false) return;
-  const want = !!db.playlist.running || Date.now() < liveUntil;
+  const want = !!db.playlist.running || Date.now() < liveUntil || !!(guest && guest.playing()); // a guest's turn (the testing override) wakes it too
   if (want === wledOn || Date.now() < wledRetryAt) return;
   wledOn = want;
   const body = want && settings.wledBlank ? { on: true, seg: [{ id: 0, fx: 0, col: BLACK_SEG }] } : { on: want };
@@ -893,6 +894,15 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/version') return send(res, 200, { build: BUILD });
     if (p === '/api/guest' && req.method === 'GET') return send(res, 200, guest.status());
+    // The QR code (SVG) and the printable sign (PDF). The link: ?link=, else the QR link setting, the guest site, or this sample.
+    if ((p === '/api/guest/qr.svg' || p === '/api/guest/sign.pdf') && req.method === 'GET') {
+      const gc = GQ.clean({}, settings.guest), host = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim();
+      const link = String(url.searchParams.get('link') || gc.qrLink || gc.url || `https://${host}/external/`).trim().slice(0, 200);
+      if (!/^https?:\/\/\S+$/i.test(link)) return send(res, 400, { error: 'The link should start with https://' });
+      const dl = url.searchParams.get('download') ? { 'Content-Disposition': `attachment; filename="${p.endsWith('.pdf') ? 'tree-sign.pdf' : 'tree-qr.svg'}"` } : {};
+      if (p.endsWith('.svg')) return send(res, 200, SIGN.qrSvg(link), 'image/svg+xml', Object.assign({ 'Cache-Control': 'no-store' }, dl));
+      return send(res, 200, SIGN.signPdf(link, gc.title), 'application/pdf', Object.assign({ 'Cache-Control': 'no-store' }, dl));
+    }
     // Activity: visits summarised (Settings -> Guests -> Activity), or the raw log to download
     if (p === '/api/guest/activity' && req.method === 'GET') return send(res, 200, { visits: guest.summary(Math.max(1, Math.min(90, +url.searchParams.get('days') || 7))) });
     if (p === '/api/guest/log' && req.method === 'GET') {

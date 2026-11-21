@@ -23,6 +23,8 @@ main{max-width:560px;margin:0 auto;padding:0 12px}
 .scene h1 span{color:var(--gold)}
 .reload{position:absolute;top:6px;left:8px;width:30px;height:30px;border-radius:50%;border:1px solid #ffffff30;background:#0008;color:#fff;font-size:16px;line-height:1;padding:0;z-index:3}
 .reload:active{transform:rotate(180deg)}
+.share{position:absolute;top:6px;left:44px;height:30px;border-radius:15px;border:1px solid #ffffff30;background:#0008;color:#fff;font:inherit;font-size:13px;font-weight:600;padding:0 11px 0 9px;z-index:3;display:flex;align-items:center;gap:5px}
+.share svg{width:15px;height:15px}
 /* now + line */
 .now{display:flex;gap:10px;align-items:center}
 .now .txt{flex:1;min-width:0}
@@ -222,6 +224,7 @@ body.closedMode .pupil{display:none}
  </g><g class="zzz" fill="#cfd6ff" font-weight="800"><text x="362" y="128" font-size="7">z</text><text x="368" y="121" font-size="9">z</text><text x="375" y="113" font-size="11">Z</text></g><g transform="translate(344,118) scale(.6)"><g class="gift" id="gift"><rect x="-7" y="-7" width="14" height="12" rx="1.5" fill="#3bb3ff"/><rect x="-1.2" y="-7" width="2.4" height="12" fill="#ffd23b"/><path d="M0-7 q-6-6-6 0 m6 0 q6-6 6 0" stroke="#ffd23b" stroke-width="1.6" fill="none"/></g></g>
 </svg>
 <button type="button" class="reload" id="reload" title="Refresh" aria-label="Refresh the page">↻</button>
+<button type="button" class="share" id="share" aria-label="Share this page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>Share</button>
 <h1 id="title">Light Up the <span>Tree</span></h1>
 </div>
 <main>
@@ -562,6 +565,15 @@ poll(); setInterval(function () { if (!document.hidden) poll(); }, 4000);
 document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
 window.addEventListener('pageshow', function (e) { if (e.persisted) poll(); });
 $('reload').onclick = function () { track('reload'); flushEv(true); location.reload(); };
+// Share: the phone's own share sheet (Messages, AirDrop...), or copy the link where there isn't one
+$('share').onclick = function () {
+  var url = location.href.split('#')[0].split('?')[0], t = document.title;
+  track('share');
+  if (navigator.share) { navigator.share({ title: t, text: 'Light up the Christmas tree! Pick what it shows next:', url: url }).catch(function () {}); return; }
+  var done = function () { say('Link copied. Paste it to share.', true); };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(url).then(done, function () { prompt('Copy this link:', url); });
+  else prompt('Copy this link:', url);
+};
 </script>
 </body>
 </html>
