@@ -110,7 +110,8 @@ function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
   const isMine = (x) => !!mine && mine.has(x);
   const open = treeOpen(q, now);
   return {
-    open, reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
+    open, why: open ? null : now - q.seen >= TREE_STALE_MS ? 'offline' : q.why || 'closed', back: open ? null : q.back || null,
+    reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
     sec: q.sec, perGuest: share(q).max, busy: share(q).busy,
     now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
     items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
@@ -215,6 +216,7 @@ export async function treeSync(b, now) {
     for (const k in q.played || {}) { q.played[k] = q.played[k].filter((x) => now - x < FRESH_MS); if (!q.played[k].length) delete q.played[k]; }
     if (Array.isArray(b.drop)) q.items = q.items.filter((x) => !b.drop.includes(x.t)); // requests the tree can't play
     q.open = !!b.open; q.seen = now; q.sec = sec;
+    q.why = b.open ? null : ['paused', 'resting', 'live', 'closed'].includes(b.why) ? b.why : 'closed'; q.back = b.open ? null : String(b.back || '').slice(0, 40) || null;
     if (b.limits) q.limits = { lineMin: +b.limits.lineMin }; q.reason = b.open ? null : String(b.reason || 'The tree isn’t taking requests right now.').slice(0, 120);
     const n = b.now && b.now.t ? b.now : null;
     if (n) {

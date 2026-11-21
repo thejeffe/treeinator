@@ -56,12 +56,12 @@ function create(ctx) {
 
   function state() {
     const c = ctx.cfg();
-    if (!c.enabled) return { open: false, reason: 'The tree isn’t taking requests right now.' };
-    if (c.paused) return { open: false, reason: c.note || 'Requests are paused right now. Check back soon!' };
+    if (!c.enabled) return { open: false, why: 'closed', reason: 'The tree isn’t taking requests right now.' };
+    if (c.paused) return { open: false, why: 'paused', reason: c.note || 'Requests are paused right now. Check back soon!' };
     const s = ctx.scheduleOn();
-    if (!s.on) return { open: false, reason: s.back ? `The tree is resting. Requests open again ${s.back}.` : 'The tree is resting right now.' };
-    if (!ctx.running()) return { open: false, reason: 'The tree is off right now.' };
-    if (ctx.live()) return { open: false, reason: 'Someone’s playing the tree live right now. Check back in a minute.' };
+    if (!s.on) return { open: false, why: 'resting', back: s.back || null, reason: s.back ? `The tree is resting. Requests open again ${s.back}.` : 'The tree is resting right now.' };
+    if (!ctx.running()) return { open: false, why: 'closed', reason: 'The tree is off right now.' };
+    if (ctx.live()) return { open: false, why: 'live', reason: 'Someone’s playing the tree live right now. Check back in a minute.' };
     return { open: true, reason: null };
   }
 
@@ -97,7 +97,7 @@ function create(ctx) {
     if (busy) return; busy = true; lastSync = Date.now();
     try {
       const st = state(); lastOpen = st.open;
-      const body = { open: st.open, reason: st.reason, sec: c.sec, limits: { lineMin: c.lineMin }, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
+      const body = { open: st.open, reason: st.reason, why: st.why || null, back: st.back || null, sec: c.sec, limits: { lineMin: c.lineMin }, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
       if (clearAsk) body.clear = true;
       if (drop.length) body.drop = drop.slice();
       const cat = catalog(); if (cat.hash !== cloudHash) body.catalog = cat;
