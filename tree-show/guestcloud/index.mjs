@@ -12,8 +12,13 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { checkMessage } from './words.mjs';
 
 const QUEUE_MAX = 30;            // waiting requests
-const PER_GUEST = 3;             // each phone (address): up to 3 waiting at once,
-const WINDOW_MS = 4 * 60 * 1000; // and up to 3 sent in any 4 minutes
+// Per phone (address), set in tree-show (Settings -> Guests) and sent with each check-in:
+// up to `waiting` requests in the line at once, and `sent` requests in any `windowMin` minutes.
+const LIMITS = { waiting: 5, sent: 10, windowMin: 10 };
+function limitsOf(q) {
+  const l = Object.assign({}, LIMITS, q.limits || {});
+  return { waiting: Math.max(1, Math.min(20, l.waiting | 0)), sent: Math.max(1, Math.min(60, l.sent | 0)), windowMin: Math.max(1, Math.min(120, l.windowMin | 0)) };
+}
 const TREE_STALE_MS = 30 * 1000; // no word from the tree for this long: requests are closed
 const COLOR = /^#[0-9a-f]{6}$/;
 
@@ -91,7 +96,7 @@ function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
   const open = treeOpen(q, now);
   return {
     open, reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
-    sec: q.sec,
+    sec: q.sec, perGuest: limitsOf(q).waiting,
     now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
     items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
   };
@@ -115,7 +120,7 @@ export async function handler(ev) {
     if (path === '/api/queue' && method === 'GET') {
       const q = (await store.get('queue')) || { d: EMPTY() };
       // the guest's own tickets (t=a,b,c): marks their requests
-      const mine = new Set(String((ev.queryStringParameters || {}).t || '').split(',').slice(0, PER_GUEST + 2).map((x) => x.slice(0, 40)).filter(Boolean));
+      const mine = new Set(String((ev.queryStringParameters || {}).t || '').split(',').slice(0, 25).map((x) => x.slice(0, 40)).filter(Boolean));
       return reply(200, publicQueue(q.d, now, mine));
     }
     if (path === '/api/catalog' && method === 'GET') {
@@ -155,15 +160,16 @@ async function request(ev, b, now) {
   const who = guestId(ev), t = randomBytes(12).toString('base64url');
   const out = await update('queue', (q) => {
     if (!treeOpen(q, now)) throw httpError(409, publicQueue(q, now).reason);
+    const L = limitsOf(q), WINDOW_MS = L.windowMin * 60000;
     for (const k in q.rate) { // times each guest sent a request, within the window
       const v = (Array.isArray(q.rate[k]) ? q.rate[k] : [q.rate[k]]).filter((x) => now - x < WINDOW_MS);
       if (v.length) q.rate[k] = v; else delete q.rate[k];
     }
-    if (q.items.filter((x) => x.who === who).length >= PER_GUEST) throw httpError(429, `You have ${PER_GUEST} waiting already. Once one is on the tree you can add another.`);
+    if (q.items.filter((x) => x.who === who).length >= L.waiting) throw httpError(429, `You have ${L.waiting} waiting already. Once one is on the tree you can add another.`);
     const sent = q.rate[who] || [];
-    if (sent.length >= PER_GUEST) {
+    if (sent.length >= L.sent) {
       const wait = Math.ceil((sent[0] + WINDOW_MS - now) / 1000);
-      throw httpError(429, `That’s ${PER_GUEST} in 4 minutes. You can send another in ${wait < 60 ? wait + ' seconds' : Math.ceil(wait / 60) + ' min'}.`);
+      throw httpError(429, `That’s ${L.sent} in ${L.windowMin} minute${L.windowMin > 1 ? 's' : ''}. You can send another in ${wait < 60 ? wait + ' seconds' : Math.ceil(wait / 60) + ' min'}.`);
     }
     if (q.items.length >= QUEUE_MAX) throw httpError(429, 'The queue is full right now. Try again in a few minutes.');
     q.items.push({ t, who, id: d.id, name: d.name, colors, msg: m.text, at: now });
@@ -188,7 +194,8 @@ export async function treeSync(b, now) {
   const out = await update('queue', (q) => {
     if (b.clear) q.items = [];                                     // the owner cleared the queue
     if (Array.isArray(b.drop)) q.items = q.items.filter((x) => !b.drop.includes(x.t)); // requests the tree can't play
-    q.open = !!b.open; q.seen = now; q.sec = sec; q.reason = b.open ? null : String(b.reason || 'The tree isn’t taking requests right now.').slice(0, 120);
+    q.open = !!b.open; q.seen = now; q.sec = sec;
+    if (b.limits) q.limits = { waiting: +b.limits.waiting, sent: +b.limits.sent, windowMin: +b.limits.windowMin }; q.reason = b.open ? null : String(b.reason || 'The tree isn’t taking requests right now.').slice(0, 120);
     const n = b.now && b.now.t ? b.now : null;
     if (n) {
       const i = q.items.findIndex((x) => x.t === n.t);

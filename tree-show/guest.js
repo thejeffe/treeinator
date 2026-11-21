@@ -12,7 +12,7 @@ const path = require('path');
 const https = require('https');
 const GL = require('./public/guestlook.js');
 
-const DEFAULTS = { enabled: false, paused: false, note: '', url: '', key: '', sec: 45, fav: '', title: 'Light Up the Tree' };
+const DEFAULTS = { enabled: false, paused: false, note: '', url: '', key: '', sec: 45, fav: '', title: 'Light Up the Tree', maxWaiting: 5, maxSent: 10, windowMin: 10 };
 const SYNC_MS = 3000, FONT = /^[A-Z0-9 !?.,'\-&*+#:<]{0,24}$/;
 
 function clean(g, old) {
@@ -20,12 +20,16 @@ function clean(g, old) {
   const pick = (k) => (g[k] == null ? old[k] : g[k]);
   const url = String(pick('url') || '').trim().replace(/\/+$/, '');
   if (url && !/^https:\/\/[a-z0-9.-]+(:\d+)?(\/[\w./-]*)?$/i.test(url)) throw new Error('Guest site address should start with https://, like https://t.example.com.');
+  const lim = (k, lo, hi, name) => { const v = Math.round(+(pick(k) == null ? DEFAULTS[k] : pick(k))); if (!(v >= lo && v <= hi)) throw new Error(`${name} should be between ${lo} and ${hi}.`); return v; };
   const sec = Math.round(+pick('sec'));
   if (!(sec >= 10 && sec <= 600)) throw new Error('Time per guest request should be between 10 and 600 seconds.');
   return {
     enabled: pick('enabled') === true, paused: pick('paused') === true, note: String(pick('note') || '').trim().slice(0, 120),
     url, key: g.clearKey ? '' : g.key ? String(g.key).trim().slice(0, 200) : old.key || '', sec, fav: String(pick('fav') || '').slice(0, 40),
     title: String(pick('title') || DEFAULTS.title).trim().slice(0, 40) || DEFAULTS.title,
+    maxWaiting: lim('maxWaiting', 1, 20, 'Requests one phone can have waiting'),
+    maxSent: lim('maxSent', 1, 60, 'Requests one phone can send'),
+    windowMin: lim('windowMin', 1, 120, 'Minutes for the send limit'),
   };
 }
 function publicCfg(g) { const c = Object.assign({}, DEFAULTS, g || {}); c.keySet = !!c.key; delete c.key; return c; }
@@ -95,7 +99,7 @@ function create(ctx) {
     if (busy) return; busy = true; lastSync = Date.now();
     try {
       const st = state(); lastOpen = st.open;
-      const body = { open: st.open, reason: st.reason, sec: c.sec, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
+      const body = { open: st.open, reason: st.reason, sec: c.sec, limits: { waiting: c.maxWaiting, sent: c.maxSent, windowMin: c.windowMin }, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
       if (clearAsk) body.clear = true;
       if (drop.length) body.drop = drop.slice();
       const cat = catalog(); if (cat.hash !== cloudHash) body.catalog = cat;

@@ -165,8 +165,8 @@ body.typing .go{position:static;background:none;padding-top:10px}
 var $ = function (id) { return document.getElementById(id); };
 var PAL = [['#ff1a1a','Red'],['#ff7a00','Orange'],['#ffd400','Gold'],['#2ee66b','Green'],['#00c8ff','Ice'],['#2b5cff','Blue'],['#8a2bff','Purple'],['#ff4fd8','Pink'],['#ffffff','White']];
 var CAT = null, E = null, G = null, sel = null, colors = [], tickets = [], curCat = null, lineOpen = false;
-var PER_GUEST = 3; // requests one phone can have waiting
-try { tickets = JSON.parse(localStorage.getItem('treeTickets') || '[]').filter(function (t) { return typeof t === 'string'; }).slice(-6); } catch (e) {}
+var PER_GUEST = 5; // requests one phone can have waiting (the site says, with each check)
+try { tickets = JSON.parse(localStorage.getItem('treeTickets') || '[]').filter(function (t) { return typeof t === 'string'; }).slice(-25); } catch (e) {}
 function saveTickets() { try { localStorage.setItem('treeTickets', JSON.stringify(tickets)); } catch (e) {} }
 var ALLOWED = /^[A-Z0-9 !?.,'\-&*+#:♥]*$/;
 
@@ -183,7 +183,7 @@ function load(src) { return new Promise(function (ok, no) { var s = document.cre
 // ---------- what's on, and the line ----------
 var lastQ = null;
 function drawQueue(q) {
-  lastQ = q;
+  lastQ = q; if (q.perGuest) PER_GUEST = q.perGuest;
   $('nowCard').classList.toggle('closed', !q.open);
   var t;
   if (!q.open) t = '<b>' + esc(q.reason || 'The tree isn’t taking requests right now.') + '</b>';
@@ -305,7 +305,7 @@ $('go').onclick = function () {
   if (!sel) return;
   var b = $('go'); b.disabled = true; b.textContent = 'Sending…';
   api('request', { id: sel.id, colors: colors, msg: msgVal().replace(/♥/g, '<') }).then(function (j) {
-    tickets.push(j.t); tickets = tickets.slice(-6); saveTickets(); myCount++;
+    tickets.push(j.t); tickets = tickets.slice(-25); saveTickets(); myCount++;
     say('You’re in line! Number ' + j.pos + '.', true); celebrate(); poll();
   }).catch(function (e) { say(e.message); setGo(); });
 };
