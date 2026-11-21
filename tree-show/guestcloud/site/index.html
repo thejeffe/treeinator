@@ -17,9 +17,10 @@ main{max-width:560px;margin:0 auto;padding:0 12px}
 .lbl{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--gold);font-weight:700;margin:0 0 6px}
 .hide{display:none!important}
 /* scene with the title */
-.scene{position:relative;height:74px;overflow:hidden;background:linear-gradient(#05101c,#0b1a12)}
+/* the banner keeps the drawing's proportions (400 x 74): taller on wide screens, never cropped */
+.scene{position:relative;width:100%;aspect-ratio:400/74;max-height:180px;overflow:hidden;background:linear-gradient(#05101c,#0b1a12)}
 .scene svg{position:absolute;inset:0;width:100%;height:100%}
-.scene h1{position:absolute;left:14px;bottom:12px;margin:0;font-size:22px;line-height:1.05;max-width:62%;text-shadow:0 2px 8px #000}
+.scene h1{position:absolute;left:3.6%;bottom:16%;margin:0;font-size:clamp(20px,5.6vw,46px);line-height:1.05;max-width:62%;text-shadow:0 2px 8px #000}
 .scene h1 span{color:var(--gold)}
 .reload,.share{position:absolute;top:4px;width:28px;height:28px;border:0;border-radius:50%;background:none;color:#fff;opacity:.45;padding:0;z-index:3;display:grid;place-items:center}
 .reload{left:6px}.share{left:34px}
@@ -92,7 +93,7 @@ canvas{width:108px;height:144px;display:block;border-radius:9px;background:#0508
 .go button{width:100%;font:inherit;font-size:17px;font-weight:700;padding:13px;border:0;border-radius:13px;background:var(--red);color:#fff;box-shadow:0 6px 20px #0008}
 .go button:disabled{background:#4b3a38;color:#c9b4b0}
 /* typing a message: the button stops floating (it would sit on top of the keyboard and the box), the box scrolls into view */
-body.tight .scene{height:56px}body.tight .scene h1{font-size:19px;bottom:8px}
+body.tight .scene{max-height:58px}body.tight .scene h1{font-size:19px;bottom:8px}
 body.tight canvas{width:90px;height:120px}body.tight .make{grid-template-columns:90px minmax(0,1fr)}
 body.tight .hint{display:none}
 /* typing: the button rides just above the keyboard (placeGo), with room to scroll the box above it */
@@ -159,7 +160,7 @@ body.closedMode .pupil{display:none}
 </head>
 <body>
 <div class="scene" aria-hidden="false">
-<svg viewBox="0 98 400 74" preserveAspectRatio="xMidYMax slice">
+<svg viewBox="0 98 400 74" preserveAspectRatio="xMidYMax meet">
  <defs>
   <radialGradient id="glass" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".5" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient>
   <clipPath id="scrClip"><rect x="252" y="135" width="28" height="24" rx="6"/></clipPath>

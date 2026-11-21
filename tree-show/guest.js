@@ -95,7 +95,7 @@ function create(ctx) {
       }
       if (e.k === 'refused' && e.why !== 'flood' && !/^One moment/.test(e.reason || '')) vs.refused.push({ at: e.at, reason: e.reason, why: e.why }); // (quick taps aren't turn-aways)
     }
-    return visits.reverse().slice(0, 300);
+    return visits.sort((a, b) => b.last - a.last).slice(0, 300); // most recently active first
   }
   prune(); setInterval(prune, 864e5).unref();
 
