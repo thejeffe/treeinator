@@ -689,7 +689,7 @@ function schedulePlan(sc, days) {
 function nowInfo() { const d = new Date(); return { time: hhmm(d.getHours() * 60 + d.getMinutes()), day: d.getDay(), tz: TZ, sun: sunToday() }; }
 
 // ---------- HTTP ----------
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.gif': 'image/gif' };
 const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0', 'Pragma': 'no-cache', 'Expires': '0' };
 // cache: extra headers (default: never store, for the API)
 function send(res, code, body, type, cache) { res.writeHead(code, Object.assign({ 'Content-Type': type || 'application/json' }, cache || NO_STORE)); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); }

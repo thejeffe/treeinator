@@ -567,6 +567,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
   <div class="acts"><button type="button" class="left" id="sRestart" title="Restart the tree-show server (the tree blinks off for a few seconds)">Restart tree-show</button><button type="button" id="sCancel">Cancel</button><button type="submit" class="pri" id="sSave">Save</button></div>
  </form>
 </dialog>
+<script>/* installable app with an offline screen (sw.js) */if('serviceWorker' in navigator)addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})});</script>
 <script src="config.js"></script>
 <script src="engine.js"></script>
 <script>
