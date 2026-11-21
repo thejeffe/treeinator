@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1a12">
+<title>Light Up the Tree</title>
+<meta name="description" content="Pick what the Christmas tree shows next.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root{--bg:#0b1a12;--card:#12261b;--line:#24402f;--ink:#f3f6f1;--dim:#a9bdb0;--gold:#f2c14e;--red:#e0483e;--green:#3fbf6f;--r:14px}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg) radial-gradient(1200px 500px at 50% -200px,#1d4a30,transparent);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:0 16px 120px}
+main{max-width:560px;margin:0 auto}
+h1{font-size:28px;margin:12px 0 2px;letter-spacing:.2px}
+h1 span{color:var(--gold)}
+.sub{color:var(--dim);margin:0 0 16px}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.8px;color:var(--gold);margin:22px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.closed{border-color:#5a3a2a;background:#2a1a14;color:#ffd7c9}
+.now{display:flex;gap:12px;align-items:center}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);flex:none;animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.q{list-style:none;margin:10px 0 0;padding:0}
+.q li{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.q li:first-child{border-top:0}
+.q .n{width:26px;height:26px;border-radius:50%;background:#1e3a29;display:grid;place-items:center;font-size:13px;flex:none;color:var(--dim)}
+.q .mine{color:var(--gold)}
+.q .mine .n{background:var(--gold);color:#222}
+.q small{color:var(--dim);display:block}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:2px;vertical-align:-1px;border:1px solid #0006}
+.empty{color:var(--dim)}
+.pre{display:flex;justify-content:center;margin:4px 0 2px}
+canvas{width:100%;max-width:300px;aspect-ratio:3/4;display:block}
+.pick{font-weight:600;text-align:center;margin:2px 0 0}
+input[type=search],input[type=text]{width:100%;font:inherit;color:var(--ink);background:#0d1c14;border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+input:focus{outline:2px solid var(--gold);outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:15px;color:var(--ink);background:#173123;border:1px solid var(--line);border-radius:999px;padding:8px 13px;cursor:pointer}
+.chip[aria-pressed=true]{background:var(--gold);color:#1d1600;border-color:var(--gold);font-weight:600}
+details{border-top:1px solid var(--line)}
+details:first-of-type{border-top:0}
+summary{cursor:pointer;padding:11px 2px;font-weight:600;list-style-position:outside}
+details .chips{padding:0 0 12px}
+.seg{display:flex;background:#0d1c14;border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;font:inherit;color:var(--dim);background:none;border:0;border-radius:9px;padding:9px}
+.seg button[aria-pressed=true]{background:#21402e;color:var(--ink);font-weight:600}
+.pal{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px}
+.pal button{aspect-ratio:1;border-radius:10px;border:2px solid #0006;cursor:pointer;position:relative}
+.pal button[aria-pressed=true]{outline:3px solid var(--ink);outline-offset:2px}
+.pal button b{position:absolute;inset:auto 0 -2px;font-size:11px;color:#000;text-shadow:0 0 3px #fff}
+.hint{color:var(--dim);font-size:14px;margin:8px 0 0}
+.msgrow{display:flex;gap:8px}
+.msgrow button{font:inherit;font-size:20px;background:#173123;color:var(--red);border:1px solid var(--line);border-radius:10px;width:50px}
+.count{color:var(--dim);font-size:13px;text-align:right;margin-top:4px}
+.go{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 30%)}
+.go div{max-width:560px;margin:0 auto}
+.go button{width:100%;font:inherit;font-size:18px;font-weight:700;padding:15px;border:0;border-radius:14px;background:var(--red);color:#fff;box-shadow:0 6px 20px #0008}
+.go button:disabled{background:#4b3a38;color:#c9b4b0}
+.err{color:#ffb4a8;min-height:1.2em;margin:6px 2px 0;font-size:15px}
+.ok{color:#bff0cf}
+.x{background:none;border:0;color:var(--dim);font:inherit;font-size:14px;text-decoration:underline;margin-left:auto;cursor:pointer}
+.hide{display:none!important}
+/* ---- the scene: a tree in a Santa hat, and Santa flying by (original cartoon) ---- */
+.scene{position:relative;height:170px;margin:14px -16px 0;overflow:hidden;background:linear-gradient(#05101c,#0b1a12)}
+.scene svg{position:absolute;inset:0;width:100%;height:100%}
+.star{animation:tw 3s infinite ease-in-out}
+@keyframes tw{50%{opacity:.2}}
+.tree{transform-box:fill-box;transform-origin:50% 100%;animation:sway 4s infinite ease-in-out}
+@keyframes sway{0%,100%{transform:rotate(-2.5deg)}50%{transform:rotate(2.5deg)}}
+.tree.happy{animation:hop .9s 2 ease-out}
+@keyframes hop{0%,100%{transform:translateY(0) scale(1)}30%{transform:translateY(-14px) scale(1.04,.97)}60%{transform:translateY(0) scale(1.06,.92)}}
+.bulb{animation:tw 1.4s infinite}
+.pom{transform-box:fill-box;transform-origin:0 0;animation:flop 4s infinite ease-in-out}
+@keyframes flop{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(14deg)}}
+.lid{transform-box:fill-box;transform-origin:50% 0;animation:blink 5s infinite}
+@keyframes blink{0%,92%,100%{transform:scaleY(0)}95%{transform:scaleY(1)}}
+.pupil{animation:look 7s infinite ease-in-out}
+@keyframes look{0%,40%{transform:translate(0,0)}50%,70%{transform:translate(2.5px,-1.5px)}80%,100%{transform:translate(-2.5px,0)}}
+.sleigh{animation:fly 16s infinite linear}
+@keyframes fly{0%{transform:translate(-260px,30px)}45%{transform:translate(900px,0)}100%{transform:translate(900px,0)}}
+.bob{animation:bob 1s infinite ease-in-out}
+@keyframes bob{50%{transform:translateY(-6px)}}
+.ho{opacity:0;animation:ho 16s infinite}
+@keyframes ho{12%,13%{opacity:0}16%,30%{opacity:1}33%{opacity:0}}
+.gift{opacity:0}
+.gift.drop{animation:drop 1.1s ease-in forwards}
+@keyframes drop{0%{opacity:1;transform:translate(0,-140px) rotate(-30deg)}85%{opacity:1;transform:translate(0,0) rotate(10deg)}100%{opacity:0;transform:translate(0,4px)}}
+@media (prefers-reduced-motion:reduce){.scene *{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="scene" aria-hidden="true">
+<svg viewBox="0 0 400 170" preserveAspectRatio="xMidYMax slice">
+ <g fill="#fff"><circle class="star" cx="40" cy="30" r="1.2"/><circle class="star" cx="110" cy="18" r="1" style="animation-delay:-1s"/><circle class="star" cx="300" cy="24" r="1.3" style="animation-delay:-2s"/><circle class="star" cx="350" cy="60" r="1" style="animation-delay:-.5s"/><circle class="star" cx="200" cy="12" r="1.1" style="animation-delay:-1.6s"/><circle class="star" cx="75" cy="70" r=".9" style="animation-delay:-2.4s"/><circle class="star" cx="380" cy="14" r="1" style="animation-delay:-.9s"/></g>
+ <ellipse cx="200" cy="176" rx="260" ry="22" fill="#e9f3f7"/>
+ <!-- Santa's sleigh with one reindeer, flying left to right -->
+ <g class="sleigh"><g class="bob">
+  <g transform="translate(70,40)">
+   <path d="M-6 6 q8-10 20-6 l6 8 q-14 6-26-2z" fill="#8b5a2b"/><circle cx="18" cy="2" r="2.2" fill="#ff2a2a"/>
+   <path d="M2-2 l-4-10 m4 10 l2-11 m-4 2 l-4-4" stroke="#c9a06a" stroke-width="1.6" fill="none"/>
+   <path d="M-4 10 l-2 9 m10-8 l1 9 m6-10 l2 9" stroke="#8b5a2b" stroke-width="2"/>
+  </g>
+  <path d="M62 50 q-18 4-34 2" stroke="#c9a06a" stroke-width="1" fill="none"/>
+  <g transform="translate(0,40)">
+   <path d="M-2 18 h40 q4 0 6-6 l2-8 h-6 l-2 6 h-36z" fill="#c0262d"/><path d="M-6 24 q24 6 54-2" stroke="#f2c14e" stroke-width="2" fill="none"/>
+   <circle cx="14" cy="2" r="6" fill="#f3c9a8"/><path d="M8 4 q6 12 12 0z" fill="#fff"/>
+   <path d="M7 0 q7-12 15-2z" fill="#d42a2a"/><circle cx="23" cy="-2" r="2.2" fill="#fff"/>
+   <rect x="6" y="7" width="16" height="9" rx="3" fill="#d42a2a"/><rect x="24" y="4" width="9" height="9" rx="1.5" fill="#2e8b57"/><rect x="27.5" y="4" width="2" height="9" fill="#f2c14e"/>
+  </g>
+  <g class="ho"><rect x="-8" y="6" width="60" height="20" rx="10" fill="#fff"/><text x="22" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#c0262d">HO HO HO!</text></g>
+ </g></g>
+ <!-- the tree, in a Santa hat, with googly eyes -->
+ <g class="tree" id="tree">
+  <rect x="193" y="150" width="14" height="14" fill="#7a4a24"/>
+  <path d="M200 52 L240 104 H222 L252 140 H232 L262 158 H138 L168 140 H148 L178 104 H160 Z" fill="#1f8a4c"/>
+  <path d="M200 52 L240 104 H222 L252 140 H232 L262 158 H200 Z" fill="#000" opacity=".12"/>
+  <g><circle class="bulb" cx="180" cy="118" r="3" fill="#ff3b3b"/><circle class="bulb" cx="222" cy="126" r="3" fill="#ffd23b" style="animation-delay:-.4s"/><circle class="bulb" cx="200" cy="140" r="3" fill="#3bb3ff" style="animation-delay:-.8s"/><circle class="bulb" cx="160" cy="152" r="3" fill="#ffd23b" style="animation-delay:-1.1s"/><circle class="bulb" cx="244" cy="152" r="3" fill="#ff3b3b" style="animation-delay:-.2s"/><circle class="bulb" cx="214" cy="100" r="2.6" fill="#ff7ad9" style="animation-delay:-.6s"/></g>
+  <g><circle cx="188" cy="86" r="7.5" fill="#fff"/><circle cx="212" cy="86" r="7.5" fill="#fff"/>
+   <circle class="pupil" cx="189" cy="87" r="3.4" fill="#111"/><circle class="pupil" cx="211" cy="87" r="3.4" fill="#111"/>
+   <ellipse class="lid" cx="188" cy="80" rx="8" ry="7" fill="#1f8a4c"/><ellipse class="lid" cx="212" cy="80" rx="8" ry="7" fill="#1f8a4c"/>
+   <path d="M190 98 q10 8 20 0" stroke="#0d3d22" stroke-width="2.5" fill="none" stroke-linecap="round"/></g>
+  <path d="M176 60 Q200 10 232 40 L222 64 Z" fill="#d42a2a"/><rect x="172" y="58" width="56" height="10" rx="5" fill="#fff"/>
+  <g transform="translate(232,40)"><circle class="pom" cx="0" cy="0" r="6" fill="#fff"/></g>
+ </g>
+ <g transform="translate(200,62)"><g class="gift" id="gift"><rect x="-7" y="-7" width="14" height="12" rx="1.5" fill="#3bb3ff"/><rect x="-1.2" y="-7" width="2.4" height="12" fill="#ffd23b"/><path d="M0-7 q-6-6-6 0 m6 0 q6-6 6 0" stroke="#ffd23b" stroke-width="1.6" fill="none"/></g></g>
+</svg>
+</div>
+<main>
+<h1 id="title">Light Up the <span>Tree</span></h1>
+<p class="sub">Pick a design for the Christmas tree. It joins the line and plays on the tree for everyone to see.</p>
+
+<h2>On the tree now</h2>
+<div class="card" id="nowCard"><div class="empty">Checking…</div></div>
+
+<h2 id="qHead" class="hide">Up next</h2>
+<div class="card hide" id="qCard"><ul class="q" id="q"></ul></div>
+
+<div id="form">
+<h2>Preview</h2>
+<div class="card">
+ <div class="pre"><canvas id="cv" width="300" height="400" aria-label="Preview of your pick on the tree"></canvas></div>
+ <p class="pick" id="pickName">Pick a design below</p>
+</div>
+
+<h2>Design</h2>
+<div class="card">
+ <input type="search" id="find" placeholder="Search designs" autocomplete="off" aria-label="Search designs">
+ <div id="favWrap"><h2 style="margin-top:14px">Favorites</h2><div class="chips" id="favs"></div></div>
+ <h2 style="margin-top:16px">All designs</h2>
+ <div id="cats"></div>
+</div>
+
+<h2>Colors</h2>
+<div class="card">
+ <div class="seg" role="group" aria-label="Colors"><button type="button" id="cDesign" aria-pressed="true">Design’s colors</button><button type="button" id="cMine" aria-pressed="false">Pick colors</button></div>
+ <div id="palWrap" class="hide">
+  <div class="pal" id="pal"></div>
+  <p class="hint">Tap one or two colors.</p>
+ </div>
+</div>
+
+<h2>Message <span style="color:var(--dim);text-transform:none;letter-spacing:0">(optional)</span></h2>
+<div class="card">
+ <div class="msgrow"><input type="text" id="msg" maxlength="24" placeholder="MERRY CHRISTMAS!" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Message"><button type="button" id="heart" title="Add a heart" aria-label="Add a heart">♥</button></div>
+ <div class="count" id="count">0 / 24</div>
+ <p class="hint">Letters, numbers and simple punctuation. Keep it friendly. It scrolls across the tree.</p>
+</div>
+</div>
+<p class="err" id="err" role="status"></p>
+</main>
+<div class="go"><div><button type="button" id="go" disabled>Pick a design</button></div></div>
+
+<script>
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+var PAL = [['#ff1a1a','Red'],['#ff7a00','Orange'],['#ffd400','Gold'],['#2ee66b','Green'],['#00c8ff','Ice'],['#2b5cff','Blue'],['#8a2bff','Purple'],['#ff4fd8','Pink'],['#ffffff','White'],['#ffe7b0','Warm'],['#00e0b0','Teal'],['#b30000','Ruby']];
+var CAT = null, E = null, G = null, sel = null, colors = [], useMine = false, ticket = null;
+try { ticket = localStorage.getItem('treeTicket'); } catch (e) {}
+var ALLOWED = /^[A-Z0-9 !?.,'\-&*+#:♥]*$/;
+
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function showMsg(s) { return esc(s).replace(/&lt;/g, '♥'); } // the tree draws '<' as a heart
+function swatches(cs) { return (cs || []).map(function (c) { return '<span class="sw" style="background:' + esc(c) + '"></span>'; }).join(''); }
+function api(path, body) {
+  return fetch('api/' + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' })
+    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again.'); return j; }); });
+}
+function load(src) { return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); }
+
+// ---------- the queue ----------
+var lastQ = null;
+function drawQueue(q) {
+  lastQ = q;
+  var nc = $('nowCard');
+  nc.classList.toggle('closed', !q.open);
+  var head = '';
+  if (q.now) head = '<div class="now"><span class="dot"></span><div><b>' + esc(q.now.name) + '</b>' + (q.now.msg ? ' · “' + showMsg(q.now.msg) + '”' : '') + ' ' + swatches(q.now.colors) + '<small style="display:block;color:var(--dim)">A guest’s pick · ' + q.now.left + ' s left</small></div></div>';
+  else head = q.open ? '<div class="now"><span class="dot"></span><div>The tree’s own show. <b>Yours could be next!</b></div></div>' : '';
+  if (!q.open) head += '<div>' + esc(q.reason || 'The tree isn’t taking requests right now.') + '</div>';
+  nc.innerHTML = head;
+  var mine = -1;
+  $('q').innerHTML = q.items.map(function (it, i) {
+    var me = ticket && it.mine; if (me) mine = i;
+    return '<li class="' + (me ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><div><b>' + esc(it.name) + '</b> ' + swatches(it.colors) + (it.msg ? '<small>“' + showMsg(it.msg) + '”</small>' : '') + '</div>' + (me ? '<button class="x" type="button" id="cancel">Cancel</button>' : '') + '</li>';
+  }).join('');
+  $('qHead').classList.toggle('hide', !q.items.length); $('qCard').classList.toggle('hide', !q.items.length);
+  if (mine >= 0) {
+    var wait = (q.now ? q.now.left : 0) + mine * (q.sec || 45);
+    $('err').className = 'err ok'; $('err').textContent = 'You’re number ' + (mine + 1) + ' in line, about ' + (wait < 60 ? 'less than a minute' : Math.round(wait / 60) + ' min') + '.';
+    $('cancel').onclick = cancel;
+  } else if (ticket && q.now && q.now.mine) { $('err').className = 'err ok'; $('err').textContent = 'That’s yours on the tree now! 🎄'; }
+  else if (ticket && !(q.now && q.now.mine)) { ticket = null; try { localStorage.removeItem('treeTicket'); } catch (e) {} if ($('err').classList.contains('ok')) $('err').textContent = ''; }
+  setGo();
+}
+function poll() {
+  var t = ticket ? '?t=' + encodeURIComponent(ticket) : '';
+  fetch('api/queue' + t, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(drawQueue).catch(function () {});
+}
+function cancel() {
+  api('cancel', { t: ticket }).then(function () { ticket = null; try { localStorage.removeItem('treeTicket'); } catch (e) {} $('err').textContent = 'Cancelled.'; poll(); }).catch(function (e) { $('err').className = 'err'; $('err').textContent = e.message; });
+}
+
+// ---------- picking ----------
+function chip(d) { var b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = d.name; b.dataset.id = d.id; b.setAttribute('aria-pressed', 'false'); b.onclick = function () { pick(d.id); }; return b; }
+function buildLists() {
+  var byId = {}; CAT.designs.forEach(function (d) { byId[d.id] = d; });
+  var favs = (CAT.favorites || []).map(function (id) { return byId[id]; }).filter(Boolean);
+  $('favWrap').classList.toggle('hide', !favs.length);
+  favs.forEach(function (d) { $('favs').appendChild(chip(d)); });
+  var groups = {}, order = [];
+  CAT.designs.forEach(function (d) { var c = d.cat || 'Other'; if (!groups[c]) { groups[c] = []; order.push(c); } groups[c].push(d); });
+  var rank = (E && E.CATS) || []; // the tree's own order: by season
+  order.sort(function (a, b) { var x = rank.indexOf(a), y = rank.indexOf(b); return (x < 0 ? 999 : x) - (y < 0 ? 999 : y); });
+  order.forEach(function (c) {
+    var det = document.createElement('details'), s = document.createElement('summary'), w = document.createElement('div');
+    s.textContent = c + ' (' + groups[c].length + ')'; w.className = 'chips';
+    groups[c].forEach(function (d) { w.appendChild(chip(d)); });
+    det.appendChild(s); det.appendChild(w); $('cats').appendChild(det);
+  });
+}
+function pick(id) {
+  sel = CAT.designs.find(function (d) { return d.id === id; }) || null;
+  document.querySelectorAll('.chip').forEach(function (b) { b.setAttribute('aria-pressed', String(!!sel && b.dataset.id === sel.id)); });
+  $('pickName').textContent = sel ? sel.name : 'Pick a design below';
+  restartPreview(); setGo();
+}
+$('find').oninput = function () {
+  var q = this.value.trim().toLowerCase();
+  document.querySelectorAll('#cats details').forEach(function (det) {
+    var any = false;
+    det.querySelectorAll('.chip').forEach(function (b) { var on = !q || b.textContent.toLowerCase().indexOf(q) >= 0; b.classList.toggle('hide', !on); any = any || on; });
+    det.classList.toggle('hide', !any); if (q) det.open = any;
+  });
+};
+PAL.forEach(function (p) {
+  var b = document.createElement('button'); b.type = 'button'; b.style.background = p[0]; b.title = p[1]; b.setAttribute('aria-label', p[1]); b.dataset.c = p[0]; b.setAttribute('aria-pressed', 'false');
+  b.onclick = function () {
+    var i = colors.indexOf(p[0]);
+    if (i >= 0) colors.splice(i, 1); else { colors.push(p[0]); if (colors.length > 2) colors.shift(); }
+    drawPal(); restartPreview();
+  };
+  $('pal').appendChild(b);
+});
+function drawPal() { document.querySelectorAll('#pal button').forEach(function (b) { var i = colors.indexOf(b.dataset.c); b.setAttribute('aria-pressed', String(i >= 0)); b.innerHTML = i >= 0 ? '<b>' + (i + 1) + '</b>' : ''; }); }
+function setMode(mine) { useMine = mine; $('cDesign').setAttribute('aria-pressed', String(!mine)); $('cMine').setAttribute('aria-pressed', String(mine)); $('palWrap').classList.toggle('hide', !mine); restartPreview(); }
+$('cDesign').onclick = function () { setMode(false); }; $('cMine').onclick = function () { setMode(true); };
+function msgVal() { return $('msg').value.toUpperCase().replace(/[‘’]/g, "'"); }
+$('msg').oninput = function () {
+  var v = msgVal(); $('count').textContent = v.length + ' / 24';
+  $('err').className = 'err'; $('err').textContent = ALLOWED.test(v) ? '' : 'The tree can show letters, numbers and simple punctuation.';
+  restartPreview(); setGo();
+};
+$('heart').onclick = function () { var m = $('msg'); if (m.value.length < 24) { m.value += '♥'; m.oninput(); } m.focus(); };
+function setGo() {
+  var b = $('go'), open = lastQ && lastQ.open, v = msgVal();
+  b.disabled = !sel || !open || !ALLOWED.test(v) || (ticket && lastQ && lastQ.items.some(function (i) { return i.mine; }));
+  b.textContent = !open ? 'The tree is resting' : !sel ? 'Pick a design' : (ticket && lastQ && lastQ.items.some(function (i) { return i.mine; })) ? 'You’re in line' : 'Put it on the tree';
+}
+$('go').onclick = function () {
+  if (!sel) return;
+  var b = $('go'); b.disabled = true; b.textContent = 'Sending…';
+  api('request', { id: sel.id, colors: useMine ? colors : [], msg: msgVal().replace(/♥/g, '<') }).then(function (j) {
+    ticket = j.t; try { localStorage.setItem('treeTicket', ticket); } catch (e) {}
+    $('err').className = 'err ok'; $('err').textContent = 'You’re in line! Number ' + j.pos + '.';
+    celebrate();
+    window.scrollTo({ top: 0, behavior: 'smooth' }); poll();
+  }).catch(function (e) { $('err').className = 'err'; $('err').textContent = e.message; setGo(); });
+};
+
+// Santa drops a present into the tree, and the tree hops for joy.
+function celebrate() {
+  var g = $('gift'), t = $('tree');
+  g.classList.remove('drop'); t.classList.remove('happy'); void g.getBBox();
+  g.classList.add('drop'); setTimeout(function () { t.classList.add('happy'); }, 900);
+  setTimeout(function () { t.classList.remove('happy'); }, 2800);
+}
+// ---------- preview: the tree seen from the front, drawn by the tree's own engine ----------
+var run = null, look = null, frame = null, ctx = $('cv').getContext('2d');
+function restartPreview() {
+  if (!E || !sel) { look = null; ctx.clearRect(0, 0, 300, 400); return; }
+  look = G.guestLook(sel.look, useMine ? colors : [], msgVal().replace(/♥/g, '<'));
+  run = E.newRun();
+}
+var lastT = 0;
+function tick(t) {
+  requestAnimationFrame(tick);
+  if (!look) return;
+  var dt = Math.min(0.1, (t - (lastT || t)) / 1000); lastT = t;
+  E.render(look, run, dt, frame);
+  ctx.fillStyle = '#05080a'; ctx.fillRect(0, 0, 300, 400);
+  var cx = 150, top = 92, h = 290;
+  for (var k = 0; k < E.N; k++) {
+    var p = E.PX[k], x, y, rad, a;
+    if (p.tree) { if (p.depth < -0.2) continue; x = cx + p.x * 120; y = top + p.u * h; rad = 2.2 + 0.8 * p.u; a = 0.35 + 0.65 * Math.max(0, p.depth); }
+    else { if (!E.CONFIG.topper) continue; x = cx + p.tp.x * 4.2; y = 46 + p.tp.y * 4.2; rad = 2; a = 1; }
+    var r = frame[k * 3], g = frame[k * 3 + 1], bb = frame[k * 3 + 2], m = Math.max(r, g, bb);
+    if (m < 4) continue;
+    ctx.globalAlpha = a; ctx.fillStyle = 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (bb | 0) + ')';
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.2832); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+api('catalog').then(function (c) {
+  CAT = c; window.TREE_CONFIG = c.layout || {};
+  if (c.title) { // the name set in tree-show (Settings -> Guests); the last word in gold
+    var w = c.title.split(' '), last = w.pop();
+    $('title').innerHTML = (w.length ? esc(w.join(' ')) + ' ' : '') + '<span>' + esc(last) + '</span>'; document.title = c.title;
+  }
+  return load('engine.js').then(function () { return load('guestlook.js'); }).then(function () {
+    E = window.TreeEngine; G = window.GuestLook; frame = new Float32Array(E.N * 3);
+    buildLists();
+    var fav = (CAT.favorites || [])[0]; if (fav) pick(fav);
+    requestAnimationFrame(tick);
+  });
+}).catch(function () { $('err').textContent = 'Couldn’t load the designs. Pull down to try again.'; });
+poll(); setInterval(poll, 4000);
+</script>
+</body>
+</html>

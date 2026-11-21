@@ -36,8 +36,10 @@ const E = require('./public/engine.js');
 const D = require('./dither.js');     // accurate colors when the tree is dim (Settings -> Colors when dim)
 const ditherer = D.create(E);
 const H = require('./ha.js');      // Home Assistant over MQTT (Settings -> Home Assistant)
+const GQ = require('./guest.js');  // guest requests from a QR code (Settings -> Guests)
+let guest = null;
 const LAYOUT = E.CONFIG; // what the engine actually uses after validation
-function currentSettings() { const fc = fpsCfg(); return Object.assign({ wledHost: CFG.wledHost, wledPort: CFG.wledPort, wledPower: settings.wledPower !== false, wledBlank: !!settings.wledBlank, dither: D.clean(settings.dither), fpsAuto: fc.auto, fpsMax: fc.max, level: levelCfg(), mqtt: H.publicCfg(settings.mqtt) }, LAYOUT); }
+function currentSettings() { const fc = fpsCfg(); return Object.assign({ wledHost: CFG.wledHost, wledPort: CFG.wledPort, wledPower: settings.wledPower !== false, wledBlank: !!settings.wledBlank, dither: D.clean(settings.dither), fpsAuto: fc.auto, fpsMax: fc.max, level: levelCfg(), mqtt: H.publicCfg(settings.mqtt), guest: GQ.publicCfg(settings.guest) }, LAYOUT); }
 function cleanSettings(b) {
   const out = {};
   const host = String(b.wledHost == null ? CFG.wledHost : b.wledHost).trim();
@@ -70,6 +72,7 @@ function cleanSettings(b) {
   if (!(lv.avg >= 2 && lv.avg <= 60)) throw new Error('Even brightness average should be between 2% and 60%.');
   out.level = lv;
   out.mqtt = H.clean(b.mqtt, settings.mqtt);
+  out.guest = GQ.clean(b.guest, settings.guest);
   const dec = { textTop: [0, 299, 'Text position', 1], textSize: [1, 8, 'Text height', 0.1], textWidth: [0.5, 4, 'Text width', 0.1] };
   for (const k in dec) {
     const [lo, hi, name, step] = dec[k]; const v = Math.round(+(b[k] == null ? LAYOUT[k] : b[k]) / step) * step;
@@ -83,7 +86,7 @@ function cleanSettings(b) {
 const PUBLIC = path.join(__dirname, 'public');
 // Build id: changes whenever the installed code changes, so the page (and the iPad home-screen app) can tell it's out of date.
 const BUILD = (() => { const h = require('crypto').createHash('sha1');
-  for (const f of ['server.js', 'dither.js', 'ha.js', 'public/index.html', 'public/engine.js']) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (_) {} }
+  for (const f of ['server.js', 'dither.js', 'ha.js', 'guest.js', 'public/index.html', 'public/engine.js', 'public/guestlook.js', 'guestcloud/index.mjs', 'guestcloud/words.mjs', 'guestcloud/site/index.html']) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch (_) {} }
   return h.digest('hex').slice(0, 10); })();
 // Home-screen app: manifest + Apple tags so "Add to Home Screen" on an iPad/iPhone opens tree-show full screen with its icon.
 const PAGE_HEAD = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0A0E15">'
@@ -693,6 +696,22 @@ function send(res, code, body, type, cache) { res.writeHead(code, Object.assign(
 const ASSET_V = require('crypto').createHash('sha1').update(BUILD + JSON.stringify(LAYOUT)).digest('hex').slice(0, 10);
 const KEEP = { 'Cache-Control': 'public, max-age=31536000, immutable' }, DAY = { 'Cache-Control': 'public, max-age=86400' };
 let pageBuf = null; // index.html as served (read once: a new version comes with a restart)
+function readRaw(req, max) { // the body as text (the guest sample site's API)
+  return new Promise((resolve, reject) => {
+    let n = 0; const chunks = [];
+    req.on('data', (c) => { n += c.length; if (n > max) { reject(httpError(413, 'Too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); req.on('error', reject);
+  });
+}
+// When the schedule turns the tree on next, as guests read it: "at 5:30 PM", "tomorrow at 4:45 PM", "on Fri, Nov 27".
+function backAt() {
+  const sc = db.schedule; if (!sc || !sc.enabled) return null;
+  const nx = scheduleNext(sc).next; if (!nx) return null;
+  const t = nx.at && /^\d\d:\d\d$/.test(nx.at) ? (() => { const h = +nx.at.slice(0, 2), m = nx.at.slice(3); return (h % 12 || 12) + ':' + m + ' ' + (h < 12 ? 'AM' : 'PM'); })() : null;
+  if (nx.day === 'today') return t ? 'at ' + t : 'later today';
+  if (nx.day === 'tomorrow') return 'tomorrow' + (t ? ' at ' + t : '');
+  return 'on ' + nx.day + (t ? ' at ' + t : '');
+}
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let n = 0; const chunks = [];
@@ -779,6 +798,7 @@ function applySettings(next) {
   settings.level = next.level; // live, no restart
   const mqttChanged = JSON.stringify(next.mqtt) !== JSON.stringify(settings.mqtt);
   settings.mqtt = next.mqtt; if (mqttChanged && ha) ha.restart();
+  settings.guest = next.guest; if (guest) guest.sync(true);
   return restart;
 }
 
@@ -870,6 +890,33 @@ const server = http.createServer(async (req, res) => {
       log('Restart asked for from the web page'); send(res, 200, { ok: true, restarting: true }); setTimeout(shutdown, 300); return;
     }
     if (p === '/api/version') return send(res, 200, { build: BUILD });
+    if (p === '/api/guest' && req.method === 'GET') return send(res, 200, guest.status());
+    if (p === '/api/guest' && req.method === 'POST') { // owner's controls: pause / resume (saved), clear the queue, skip the one playing
+      const b = await readBody(req);
+      if (b.action === 'pause' || b.action === 'resume') {
+        const g = GQ.clean({ paused: b.action === 'pause', note: b.note }, settings.guest);
+        applySettings(Object.assign({}, cleanSettings(currentSettings()), { guest: g }));
+        log(`Guest requests ${b.action === 'pause' ? 'paused' : 'resumed'}`);
+      } else if (b.action === 'clear') { guest.clear(); log('Guest queue cleared'); }
+      else if (b.action === 'skip') guest.skip();
+      else return send(res, 400, { error: 'Unknown action.' });
+      return send(res, 200, guest.status());
+    }
+    // The guest site, hosted here as a sample (no site address in Settings -> Guests); with an address, go there.
+    if (p === '/external') { res.writeHead(302, { Location: '/external/' }); return res.end(); }
+    if (p.startsWith('/external/')) {
+      const sub = p.slice('/external/'.length), gc = settings.guest || {};
+      if (gc.url) { res.writeHead(302, { Location: gc.url + '/' }); return res.end(); }
+      if (sub.startsWith('api/')) {
+        const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+        const raw = req.method === 'POST' ? await readRaw(req, 400000) : '';
+        const r = await guest.serveLocal(req.method, sub.slice(4), Object.fromEntries(url.searchParams), raw, ip);
+        res.writeHead(r.statusCode, r.headers); return res.end(r.body);
+      }
+      const files = { '': ['guestcloud/site/index.html', MIME['.html']], 'engine.js': ['public/engine.js', MIME['.js']], 'guestlook.js': ['public/guestlook.js', MIME['.js']], 'icon.svg': ['public/icon.svg', MIME['.svg']] };
+      const f = files[sub]; if (!f) return send(res, 404, 'Not found', 'text/plain');
+      return fs.readFile(path.join(__dirname, f[0]), (err, buf) => err ? send(res, 404, 'Not found', 'text/plain') : send(res, 200, buf, f[1], { 'Cache-Control': 'no-cache' }));
+    }
     if (p === '/config.js') return send(res, 200, `window.TREE_CONFIG=${JSON.stringify(LAYOUT)};`, 'text/javascript; charset=utf-8', url.searchParams.get('v') === ASSET_V ? KEEP : NO_STORE);
     if (p.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
     // static files
@@ -964,6 +1011,13 @@ ha = H.create({
   applySettings: (patch) => { if (applySettings(cleanSettings(Object.assign(currentSettings(), patch)))) setTimeout(shutdown, 300); },
 });
 ha.start();
+guest = GQ.create({
+  cfg: () => GQ.clean({}, settings.guest), dataDir: CFG.dataDir, log, layout: LAYOUT,
+  designs: () => db.designs, getDesign, playlists: () => db.playlists, player,
+  holdDesign: () => db.playlist.hold || null, running: () => !!(db.playlist.running && player.running), live: () => Date.now() < liveUntil,
+  scheduleOn: () => { const w = scheduleWant(new Date()); return !w ? { on: true } : { on: w.kind !== 'off', back: w.kind === 'off' ? backAt() : null }; },
+});
+guest.start();
 server.listen(CFG.httpPort, () => log(`tree-show on http://0.0.0.0:${CFG.httpPort} · WLED ${CFG.wledHost}:${CFG.wledPort} · data ${DATA_FILE} · playlist ${db.playlist.running ? 'playing' : 'stopped'}`));
 function shutdown() { clearTimeout(saveTimer); try { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 1)); } catch (e) { /* ignore */ } process.exit(0); }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, shutdown);
