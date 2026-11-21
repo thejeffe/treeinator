@@ -10,7 +10,7 @@ Needs: manifold3d, numpy, trimesh, Pillow.
 
 The plate is thin but stiff: 2.0 mm with a 4 mm wide, 4.4 mm tall rim (a rim makes a thin plate far stiffer and
 guards the raised parts). Letters, QR code and TV stand 0.8 mm (4 layers at 0.2 mm). Two countersunk holes on the
-centre line for M4 pan-head screws into the snap-on pipe clips (tools/clip3d.py), each on a thicker pad; zip-tie slots either side as an alternative.
+centre line for M4 pan-head screws into the snap-on pipe clips (tools/clip3d.py), each on a thicker pad.
 """
 import json, math, os, sys
 import numpy as np

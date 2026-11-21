@@ -177,7 +177,7 @@ function printLayout(link) {
   tvShapes(tv, qx + (hx + Q + pad) * mod, qy + (hy + Q + pad) * mod, (hs - 2 * pad) * mod);
   tv.forEach((s, i) => (i === 6 || i === 7 ? green : red).push(s));   // the tree and its trunk green, the TV red
   green.push({ k: 'text', s: 'SCAN ME', cx, top: qy + size + 9, h: 15, maxw: PW3 - 30 }); // (no web address: the code is enough)
-  return { w: PW3, h: PH3, holes: [[cx, 8.5], [cx, PH3 - 8.5]], slots: [[cx - 15, 8.5], [cx + 15, 8.5], [cx - 15, PH3 - 8.5], [cx + 15, PH3 - 8.5]], red, green };
+  return { w: PW3, h: PH3, holes: [[cx, 8.5], [cx, PH3 - 8.5]], slots: [], red, green }; // (no zip-tie slots: the pipe clips hold it)
 }
 
 module.exports = { qrSvg, signSvg, signPdf, logoSvg, printLayout };
