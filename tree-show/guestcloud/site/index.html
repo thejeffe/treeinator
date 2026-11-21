@@ -118,6 +118,13 @@ body.typing .go p{display:none}
 .gift{opacity:0}
 .gift.drop{animation:drop 1.1s ease-in forwards}
 @keyframes drop{0%{opacity:1;transform:translate(0,-140px) rotate(-30deg)}85%{opacity:1;transform:translate(0,0) rotate(10deg)}100%{opacity:0;transform:translate(0,4px)}}
+/* nearby only: a sheet that explains before the phone asks for its location */
+.sheet{position:fixed;inset:0;z-index:50;background:#000a;display:flex;align-items:flex-end;justify-content:center;padding:12px}
+.sheet>div{width:100%;max-width:520px;background:#12261b;border:1px solid var(--line);border-radius:16px;padding:16px 16px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px #000}
+.sheet h3{margin:0 0 6px;font-size:18px}.sheet p{margin:0 0 10px;color:var(--dim);font-size:14px}
+.sheet ol{margin:0 0 12px;padding-left:20px;font-size:14px}.sheet ol li{margin:3px 0}
+.sheet .row2{display:flex;gap:8px}.sheet .row2 button{flex:1;font:inherit;font-weight:700;padding:12px;border-radius:12px;border:0}
+.sheet .yes{background:var(--red);color:#fff}.sheet .no{background:#1e3a29;color:var(--ink)}
 /* closed or paused: a loud card, the rest dims, the tree sleeps, the TV shows its test pattern */
 #nowCard.closed{background:#3a1511;border:2px solid #e0483e;box-shadow:0 0 0 3px #e0483e22}
 #nowCard.closed.paused{background:#33280c;border-color:#f2c14e;box-shadow:0 0 0 3px #f2c14e22}
@@ -239,6 +246,11 @@ body.closedMode .pupil{display:none}
  </div>
 </div>
 </main>
+<div class="sheet hide" id="geoSheet" role="dialog" aria-modal="true" aria-labelledby="geoH"><div>
+ <h3 id="geoH">📍 Are you near the tree?</h3>
+ <div id="geoBody"></div>
+ <div class="row2"><button type="button" class="no" id="geoNo">Not now</button><button type="button" class="yes" id="geoYes">Share my location</button></div>
+</div></div>
 <div class="go" id="goBar"><div><p id="err" role="status"></p><button type="button" id="go" disabled>Pick a design</button></div></div>
 
 <script>
@@ -248,6 +260,19 @@ var PAL = [['#ff1a1a','Red'],['#ff7a00','Orange'],['#ffd400','Gold'],['#2ee66b',
 var CAT = null, E = null, G = null, sel = null, colors = [], tickets = [], curCat = null, lineOpen = false;
 var PER_GUEST = 13; // requests one phone may have waiting right now (the site says: it shrinks when the line is busy)
 try { tickets = JSON.parse(localStorage.getItem('treeTickets') || '[]').filter(function (t) { return typeof t === 'string'; }).slice(-25); } catch (e) {}
+// ---------- activity for the owner's log: a random visitor number kept on this phone, taps sent in batches ----------
+var VISITOR = '';
+try { VISITOR = localStorage.getItem('treeVisitor') || ''; if (!VISITOR) { VISITOR = Math.random().toString(36).slice(2, 10); localStorage.setItem('treeVisitor', VISITOR); } } catch (e) { VISITOR = Math.random().toString(36).slice(2, 10); }
+var evQ = [];
+function track(k, d) { evQ.push(Object.assign({ k: k, at: Date.now() }, d || {})); if (evQ.length >= 25) flushEv(); }
+function flushEv(leaving) {
+  if (!evQ.length) return;
+  var body = JSON.stringify({ v: VISITOR, ev: evQ.splice(0, 30) });
+  if (leaving && navigator.sendBeacon) { try { if (navigator.sendBeacon('api/log', new Blob([body], { type: 'text/plain' }))) return; } catch (e) {} }
+  fetch('api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }).catch(function () {});
+}
+setInterval(function () { flushEv(); }, 15000);
+document.addEventListener('visibilitychange', function () { if (document.hidden) { track('leave'); flushEv(true); } });
 function saveTickets() { try { localStorage.setItem('treeTickets', JSON.stringify(tickets)); } catch (e) {} }
 var ALLOWED = /^[A-Z0-9 !?.,'\-&*+#:♥]*$/;
 
@@ -257,7 +282,7 @@ function swatches(cs) { return (cs || []).map(function (c) { return '<span class
 function say(text, ok) { $('err').textContent = text || ''; $('err').className = ok ? 'ok' : ''; }
 function api(path, body) {
   return fetch('api/' + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' })
-    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again.'); return j; }); });
+    .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || 'Something went wrong. Try again.'); e.why = j.why; throw e; } return j; }); });
 }
 function load(src) { return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); }
 
@@ -300,12 +325,12 @@ function drawQueue(q) {
   } else if ($('err').className === 'ok') say('');
   setGo();
 }
-$('lineBtn').onclick = function (e) { e.stopPropagation(); lineOpen = !lineOpen; if (lastQ) drawQueue(lastQ); };
+$('lineBtn').onclick = function (e) { e.stopPropagation(); lineOpen = !lineOpen; if (lineOpen) track('line'); if (lastQ) drawQueue(lastQ); };
 document.addEventListener('click', function (e) { if (lineOpen && !$('q').contains(e.target)) { lineOpen = false; if (lastQ) drawQueue(lastQ); } });
 var myCount = 0;
 function poll() { fetch('api/queue' + (tickets.length ? '?t=' + encodeURIComponent(tickets.join(',')) : ''), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(drawQueue).catch(function () {}); }
 function cancel(t) {
-  api('cancel', { t: t }).then(function () { tickets = tickets.filter(function (x) { return x !== t; }); saveTickets(); say('Cancelled.'); poll(); }).catch(function (e) { say(e.message); });
+  api('cancel', { t: t, v: VISITOR }).then(function () { tickets = tickets.filter(function (x) { return x !== t; }); saveTickets(); say('Cancelled.'); poll(); }).catch(function (e) { say(e.message); });
 }
 
 // ---------- picking: a row of categories (favorites first), a row of designs ----------
@@ -336,7 +361,7 @@ function buildLists() {
   if (favs.length) { groups['★ Favorites'] = favs; order.unshift('★ Favorites'); }
   order.forEach(function (c) {
     var b = document.createElement('button'); b.type = 'button'; b.textContent = c.replace('Christmas · ', ''); b.title = c; b.dataset.c = c;
-    b.onclick = function () { showCat(c); b.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }; $('cats').appendChild(b);
+    b.onclick = function () { showCat(c); track('cat', { c: c }); b.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }; $('cats').appendChild(b);
   });
   showCat(order[0]);
 }
@@ -344,7 +369,7 @@ function showList(list) {
   var w = $('designs'); w.innerHTML = '';
   list.forEach(function (d) {
     var b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = d.name; b.dataset.id = d.id;
-    b.setAttribute('aria-pressed', String(!!sel && sel.id === d.id)); b.onclick = function () { pick(d.id); }; w.appendChild(b);
+    b.setAttribute('aria-pressed', String(!!sel && sel.id === d.id)); b.onclick = function () { pick(d.id); track('pick', { id: d.id, name: d.name }); }; w.appendChild(b);
   });
   w.scrollLeft = 0; cue(w);
 }
@@ -374,7 +399,7 @@ function pick(id) {
   own.onclick = function () { colors = []; drawPal(); restartPreview(); }; $('pal').appendChild(own);
   PAL.forEach(function (p) {
     var b = document.createElement('button'); b.type = 'button'; b.style.background = p[0]; b.title = p[1]; b.setAttribute('aria-label', p[1]); b.dataset.c = p[0];
-    b.onclick = function () { var i = colors.indexOf(p[0]); if (i >= 0) colors.splice(i, 1); else { colors.push(p[0]); if (colors.length > 2) colors.shift(); } drawPal(); restartPreview(); };
+    b.onclick = function () { var i = colors.indexOf(p[0]); if (i >= 0) colors.splice(i, 1); else { colors.push(p[0]); if (colors.length > 2) colors.shift(); } drawPal(); restartPreview(); track('color', { c: colors.join(' ') }); };
     $('pal').appendChild(b);
   });
   drawPal();
@@ -433,14 +458,57 @@ function setGo() {
   var why = lastQ && !open ? lastQ.why : '', closedTxt = why === 'resting' ? (lastQ.back ? 'Opens ' + lastQ.back : 'The tree is resting') : why === 'paused' ? 'Paused · check back soon' : why === 'live' ? 'Live show on · back in a minute' : why === 'offline' ? 'The tree is offline' : 'Closed right now';
   b.innerHTML = (open && sel && !inLine() ? ZAP : '') + (!open ? closedTxt : inLine() ? (lastQ && lastQ.busy ? 'Busy line · wait for one of yours' : 'You’re lined up · wait for one to play') : !sel ? 'Pick a design' : myCount ? 'Add it to the line' : 'Put it on the tree');
 }
-$('go').onclick = function () {
+// ---------- nearby only: the phone's location, asked for when sending ----------
+var here = null; // { lat, lon, acc, at }
+function sheet(html, yes, yesText, noText) {
+  $('geoBody').innerHTML = html; $('geoYes').textContent = yesText || 'Share my location'; $('geoNo').textContent = noText || 'Not now';
+  $('geoYes').classList.toggle('hide', !yes); $('geoSheet').classList.remove('hide');
+  $('geoYes').onclick = function () { $('geoSheet').classList.add('hide'); if (yes) yes(); };
+  $('geoNo').onclick = function () { $('geoSheet').classList.add('hide'); setGo(); };
+}
+function howToAllow() {
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return ios
+    ? '<p>Location is turned off for this page. To turn it on in Safari:</p><ol><li>Tap <b>aA</b> (or the page icon) in the address bar.</li><li>Tap <b>Website Settings</b>, then <b>Location</b> → <b>Allow</b>.</li><li>Still asked to share? Settings app → <b>Privacy &amp; Security</b> → <b>Location Services</b> (on) → <b>Safari Websites</b> → <b>While Using the App</b>.</li></ol>'
+    : '<p>Location is turned off for this page. To turn it on:</p><ol><li>Tap the <b>lock</b> or <b>settings</b> icon next to the address.</li><li>Tap <b>Permissions</b> (or Site settings) → <b>Location</b> → <b>Allow</b>.</li><li>Make sure Location is on in your phone’s settings.</li></ol>';
+}
+function locate(then) {
+  if (!navigator.geolocation) { sheet('<p>This browser can’t share a location, so it can’t send requests to the tree.</p>', null, '', 'OK'); return; }
+  say('Finding where you are…', true);
+  navigator.geolocation.getCurrentPosition(function (p) {
+    here = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0), at: Date.now() };
+    try { localStorage.setItem('treeGeoOk', '1'); } catch (e) {}
+    track('geo-ok');
+    say(''); then();
+  }, function (err) {
+    say('');
+    if (err.code === 1) { track('geo-denied'); try { localStorage.removeItem('treeGeoOk'); } catch (e) {} sheet(howToAllow() + '<p>Then tap <b>Try again</b>.</p>', function () { locate(then); }, 'Try again', 'Close'); }
+    else sheet('<p>Your phone couldn’t find where you are just now. Step outside or wait a moment, then try again.</p>', function () { locate(then); }, 'Try again', 'Close');
+    setGo();
+  }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+}
+function withLocation(then) {
+  if (!lastQ || !lastQ.geo) return then();                         // not needed
+  if (here && Date.now() - here.at < 120000) return then();        // fresh enough (2 minutes)
+  var ok = false; try { ok = localStorage.getItem('treeGeoOk') === '1'; } catch (e) {}
+  if (ok) return locate(then);                                     // they said yes before: straight to it
+  sheet('<p>The tree takes requests from people who can see it. Your phone will ask to share your location, just to check you’re nearby. It isn’t saved or shown to anyone.</p>', function () { locate(then); });
+}
+$('go').onclick = function () { if (sel) withLocation(send); };
+function send() {
   if (!sel) return;
   var b = $('go'); b.disabled = true; b.innerHTML = ZAP + 'Sending…';
-  api('request', { id: sel.id, colors: colors, msg: msgVal().replace(/♥/g, '<') }).then(function (j) {
+  var body = { id: sel.id, colors: colors, msg: msgVal().replace(/♥/g, '<'), v: VISITOR };
+  if (here) { body.lat = here.lat; body.lon = here.lon; body.acc = here.acc; }
+  api('request', body).then(function (j) {
     tickets.push(j.t); tickets = tickets.slice(-25); saveTickets(); myCount++;
     say('You’re in line! Number ' + j.pos + '.', true); celebrate(); poll();
-  }).catch(function (e) { say(e.message); setGo(); });
-};
+  }).catch(function (e) {
+    if (e.why === 'location') { here = null; withLocation(send); return; }   // the tree asks for it now
+    if (e.why === 'far') here = null;                                          // they may walk closer: ask again next time
+    say(e.message); setGo();
+  });
+}
 // Santa drops a present into the tree, and the tree hops for joy.
 function celebrate() {
   var g = $('gift'), t = $('tree');
@@ -484,7 +552,7 @@ api('catalog').then(function (c) {
     E = window.TreeEngine; G = window.GuestLook; frame = new Float32Array(E.N * 3);
     buildLists();
     var first = (groups[order[0]] || [])[0]; if (first) pick(first.id);
-    fit(); cue($('cats')); cue($('designs'));
+    fit(); cue($('cats')); cue($('designs')); track('open'); flushEv();
     if ($('designs').scrollWidth > $('designs').clientWidth + 4) { $('designs').classList.add('hint'); setTimeout(function () { $('designs').classList.remove('hint'); }, 2200); }
     requestAnimationFrame(tick);
   });
@@ -493,7 +561,7 @@ poll(); setInterval(function () { if (!document.hidden) poll(); }, 4000);
 // back from another app or a sleeping phone: catch up at once
 document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
 window.addEventListener('pageshow', function (e) { if (e.persisted) poll(); });
-$('reload').onclick = function () { location.reload(); };
+$('reload').onclick = function () { track('reload'); flushEv(true); location.reload(); };
 </script>
 </body>
 </html>

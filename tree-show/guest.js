@@ -8,11 +8,12 @@
 // Requests are only taken while the tree is on for the schedule (or played by hand when there's no schedule), never
 // while paused (with a note guests see), the mixer is live, or the feature is off.
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const GL = require('./public/guestlook.js');
 
-const DEFAULTS = { enabled: false, paused: false, note: '', url: '', key: '', sec: 45, fav: '', title: 'Light Up the Tree', lineMin: 10 };
+const DEFAULTS = { enabled: false, paused: false, note: '', url: '', key: '', sec: 45, fav: '', title: 'Light Up the Tree', lineMin: 10, geo: false, radius: 200 };
 const SYNC_MS = 3000, FONT = /^[A-Z0-9 !?.,'\-&*+#:<]{0,24}$/;
 
 function clean(g, old) {
@@ -28,6 +29,7 @@ function clean(g, old) {
     url, key: g.clearKey ? '' : g.key ? String(g.key).trim().slice(0, 200) : old.key || '', sec, fav: String(pick('fav') || '').slice(0, 40),
     title: String(pick('title') || DEFAULTS.title).trim().slice(0, 40) || DEFAULTS.title,
     lineMin: lim('lineMin', 1, 60, 'Line length'),
+    geo: pick('geo') === true, radius: lim('radius', 30, 5000, 'Nearby distance (meters)'),
   };
 }
 function publicCfg(g) { const c = Object.assign({}, DEFAULTS, g || {}); c.keySet = !!c.key; delete c.key; return c; }
@@ -40,6 +42,60 @@ function create(ctx) {
   let lastOpen = null;
   const played = new Set();
 
+  // ---- activity log: DATA_DIR/guest-log.jsonl, one event a line, kept 90 days ----
+  // From the guest site (opens, taps, sent, refused, cancelled; collected at each check-in) and from here (played and
+  // how it ended). summary() groups it into visits for Settings -> Guests -> Activity.
+  const LOG = path.join(ctx.dataDir, 'guest-log.jsonl'), LOG_STATE = path.join(ctx.dataDir, 'guest-log-state.json'), KEEP_DAYS = 90;
+  let evSeq = 0; try { evSeq = +JSON.parse(fs.readFileSync(LOG_STATE, 'utf8')).seq || 0; } catch (e) { /* new */ }
+  function note(list) {
+    if (!list.length) return;
+    try { fs.appendFileSync(LOG, list.map((e) => JSON.stringify(e)).join('\n') + '\n'); } catch (e) { ctx.log('Guest log not saved:', e.message); }
+  }
+  function took(r) { // events from the guest site
+    if (r.lastSeq != null && r.lastSeq < evSeq) evSeq = 0;           // a new guest site (its numbering started over)
+    const fresh = (r.events || []).filter((e) => e.seq > evSeq);
+    note(fresh.map((e) => { const o = Object.assign({}, e); delete o.seq; return o; }));
+    const top = Math.max(evSeq, r.lastSeq || 0, ...fresh.map((e) => e.seq));
+    if (top !== evSeq) { evSeq = top; try { fs.writeFileSync(LOG_STATE, JSON.stringify({ seq: evSeq })); } catch (e) { /* next time */ } }
+  }
+  function prune() {
+    try {
+      const cut = Date.now() - KEEP_DAYS * 864e5, lines = fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean);
+      const keep = lines.filter((l) => { try { return JSON.parse(l).at >= cut; } catch (e) { return false; } });
+      if (keep.length !== lines.length) { fs.writeFileSync(LOG + '.tmp', keep.join('\n') + (keep.length ? '\n' : '')); fs.renameSync(LOG + '.tmp', LOG); }
+    } catch (e) { /* no log yet */ }
+  }
+  function readLog(days) {
+    const since = Date.now() - days * 864e5;
+    try { return fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((e) => e && e.at >= since).sort((a, b) => a.at - b.at); }
+    catch (e) { return []; }
+  }
+  // Visits: a visitor's events with no gap over 30 minutes; each request with how it went.
+  function summary(days) {
+    const ev = readLog(days), byT = {}, visits = [], open = {};
+    for (const e of ev) if (e.t && ['played', 'done', 'cut', 'skipped', 'removed', 'dropped', 'cancelled'].includes(e.k)) (byT[e.t] = byT[e.t] || []).push(e);
+    for (const e of ev) {
+      if (!e.v && !e.who) continue;
+      if (['played', 'done', 'cut', 'skipped', 'removed', 'dropped'].includes(e.k) && !e.v) continue; // the tree's own notes join their request below
+      const id = e.v || e.who, cur = open[id];
+      const vs = cur && e.at - cur.last <= 30 * 60000 ? cur : (open[id] = { visitor: String(id).slice(0, 6), dev: e.dev || '', start: e.at, last: e.at, looked: [], cats: [], sent: [], refused: [], geo: null, dist: null });
+      if (vs !== cur) visits.push(vs);
+      vs.last = e.at; if (e.dev && !vs.dev) vs.dev = e.dev;
+      if (e.k === 'pick' && e.name && !vs.looked.includes(e.name)) vs.looked.push(e.name);
+      if (e.k === 'cat' && e.c && !vs.cats.includes(e.c)) vs.cats.push(e.c);
+      if (e.k === 'geo-denied') vs.geo = 'refused to share location';
+      if (e.k === 'sent') {
+        if (e.dist != null) vs.dist = e.dist;
+        const what = byT[e.t] || [], pl = what.find((x) => x.k === 'played'), end = what.find((x) => x.k !== 'played');
+        vs.sent.push({ at: e.at, name: e.name, msg: e.msg || '', colors: e.colors || [], played: pl ? pl.at : null,
+          outcome: end ? end.k : pl ? 'played' : 'waiting' });
+      }
+      if (e.k === 'refused') vs.refused.push({ at: e.at, reason: e.reason, why: e.why });
+    }
+    return visits.reverse().slice(0, 300);
+  }
+  prune(); setInterval(prune, 864e5).unref();
+
   async function local() {
     if (!cloud) {
       cloud = await import(path.join(__dirname, 'guestcloud', 'index.mjs'));
@@ -48,9 +104,9 @@ function create(ctx) {
     return cloud;
   }
   // The sample site's HTTP API (tree-show serves it at /external/api/...).
-  async function serveLocal(method, apiPath, query, body, ip) {
+  async function serveLocal(method, apiPath, query, body, ip, ua) {
     const c = await local();
-    const ev = { requestContext: { http: { method, sourceIp: ip || 'local' } }, rawPath: '/api/' + apiPath, headers: {}, queryStringParameters: query, body: body == null ? '' : body };
+    const ev = { requestContext: { http: { method, sourceIp: ip || 'local' } }, rawPath: '/api/' + apiPath, headers: { 'user-agent': ua || '' }, queryStringParameters: query, body: body == null ? '' : body };
     return c.handler(ev);
   }
 
@@ -97,7 +153,9 @@ function create(ctx) {
     if (busy) return; busy = true; lastSync = Date.now();
     try {
       const st = state(); lastOpen = st.open;
-      const body = { open: st.open, reason: st.reason, why: st.why || null, back: st.back || null, sec: c.sec, limits: { lineMin: c.lineMin }, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
+      const loc = ctx.location(); // nearby only: the tree's spot (the schedule's location) goes to the guest site, never to guests
+      const body = { geo: c.geo && loc ? { lat: loc.lat, lon: loc.lon, radius: c.radius } : null, open: st.open, reason: st.reason, why: st.why || null, back: st.back || null, sec: c.sec, limits: { lineMin: c.lineMin }, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
+      body.evAfter = evSeq;
       if (clearAsk) body.clear = true;
       if (drop.length) body.drop = drop.slice();
       const cat = catalog(); if (cat.hash !== cloudHash) body.catalog = cat;
@@ -106,6 +164,7 @@ function create(ctx) {
       else { const m = await local(); r = JSON.parse((await m.treeSync(body, Date.now())).body); }
       if (body.clear) clearAsk = false;
       if (body.drop) drop = drop.filter((t) => !body.drop.includes(t));
+      took(r);
       items = (r.items || []).filter((it) => !played.has(it.t)); cloudHash = r.catalogHash; lastOk = Date.now(); lastErr = null;
     } catch (e) {
       if (lastErr !== e.message) ctx.log('Guest requests:', e.message); lastErr = e.message;
@@ -115,16 +174,18 @@ function create(ctx) {
   function start(it) {
     const d = ctx.getDesign(it.id), msg = String(it.msg || '').toUpperCase();
     played.add(it.t); if (played.size > 500) played.delete(played.values().next().value);
-    if (!d || !FONT.test(msg)) { drop.push(it.t); return false; }
+    if (!d || !FONT.test(msg)) { drop.push(it.t); note([{ at: Date.now(), k: 'dropped', t: it.t }]); return false; }
     const c = ctx.cfg(), look = GL.guestLook(d.look, it.colors || [], msg);
     const name = d.name + (msg ? ' · “' + msg.replace(/</g, '♥') + '”' : '') + ' (guest)';
     const gd = { id: 'guest:' + it.t, name, look };
     ctx.player.playDesign(gd, c.sec, true);
     cur = { t: it.t, id: gd.id, ends: Date.now() + c.sec * 1000, name };
+    note([{ at: Date.now(), k: 'played', t: it.t, name: d.name, msg }]);
     ctx.log(`Guest request: ${name}`);
     return true;
   }
-  function finish() {
+  function finish(how) {
+    if (cur) note([{ at: Date.now(), k: how || 'done', t: cur.t }]);
     cur = null;
     const st = state();
     while (st.open && items.length) { if (start(items.shift())) return; }
@@ -136,8 +197,8 @@ function create(ctx) {
   async function tick() {
     if (cur) {
       const p = ctx.player.cur;
-      if (!p || p.d.id !== cur.id || !ctx.running()) { cur = null; return; } // someone played something else: the guest's turn ends
-      if (Date.now() >= cur.ends) { finish(); sync(true); }
+      if (!p || p.d.id !== cur.id || !ctx.running()) { note([{ at: Date.now(), k: 'cut', t: cur.t }]); cur = null; return; } // someone played something else: the guest's turn ends
+      if (Date.now() >= cur.ends) { finish(cur.skip ? 'skipped' : 'done'); sync(true); }
       return;
     }
     if (state().open && items.length) { while (items.length && !start(items.shift())); if (cur) sync(true); }
@@ -148,11 +209,12 @@ function create(ctx) {
     start() { timers.push(setInterval(() => sync(false), 1000), setInterval(tick, 500)); sync(true); },
     sync, serveLocal,
     clear() { clearAsk = true; items = []; sync(true); },
-    skip() { if (cur) { cur.ends = 0; tick(); } },
-    remove(t) { t = String(t); items = items.filter((x) => x.t !== t); played.add(t); drop.push(t); sync(true); }, // the owner takes one out of the line
+    skip() { if (cur) { cur.skip = true; cur.ends = 0; tick(); } },
+    remove(t) { t = String(t); items = items.filter((x) => x.t !== t); played.add(t); drop.push(t); note([{ at: Date.now(), k: 'removed', t }]); sync(true); }, // the owner takes one out of the line
+    summary, log: (days) => readLog(days),
     status() {
       const c = ctx.cfg(), st = state();
-      return { enabled: c.enabled, paused: c.paused, open: st.open, reason: st.reason, site: c.url || null, waiting: items.length,
+      return { enabled: c.enabled, paused: c.paused, geo: c.geo, geoReady: !!ctx.location(), open: st.open, reason: st.reason, site: c.url || null, waiting: items.length,
         now: cur ? { name: cur.name, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null,
         items: items.map((it) => { const d = ctx.getDesign(it.id); return { t: it.t, name: d ? d.name : it.name || it.id, msg: it.msg || '', colors: it.colors || [], age: Math.round((Date.now() - (it.at || Date.now())) / 1000) }; }),
         lastContact: lastOk ? Math.round((Date.now() - lastOk) / 1000) : null, error: lastErr };

@@ -893,6 +893,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/version') return send(res, 200, { build: BUILD });
     if (p === '/api/guest' && req.method === 'GET') return send(res, 200, guest.status());
+    // Activity: visits summarised (Settings -> Guests -> Activity), or the raw log to download
+    if (p === '/api/guest/activity' && req.method === 'GET') return send(res, 200, { visits: guest.summary(Math.max(1, Math.min(90, +url.searchParams.get('days') || 7))) });
+    if (p === '/api/guest/log' && req.method === 'GET') {
+      const days = Math.max(1, Math.min(90, +url.searchParams.get('days') || 90));
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Content-Disposition': `attachment; filename="guest-activity-${days}d.jsonl"`, 'Cache-Control': 'no-store' });
+      return res.end(guest.log(days).map((e) => JSON.stringify(e)).join('\n') + '\n');
+    }
     if (p === '/api/guest' && req.method === 'POST') { // owner's controls: pause / resume (saved), clear the queue, skip the one playing
       const b = await readBody(req);
       if (b.action === 'pause' || b.action === 'resume') {
@@ -913,7 +920,7 @@ const server = http.createServer(async (req, res) => {
       if (sub.startsWith('api/')) {
         const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
         const raw = req.method === 'POST' ? await readRaw(req, 400000) : '';
-        const r = await guest.serveLocal(req.method, sub.slice(4), Object.fromEntries(url.searchParams), raw, ip);
+        const r = await guest.serveLocal(req.method, sub.slice(4), Object.fromEntries(url.searchParams), raw, ip, String(req.headers['user-agent'] || '').slice(0, 300));
         res.writeHead(r.statusCode, r.headers); return res.end(r.body);
       }
       const files = { '': ['guestcloud/site/index.html', MIME['.html']], 'engine.js': ['public/engine.js', MIME['.js']], 'guestlook.js': ['public/guestlook.js', MIME['.js']], 'icon.svg': ['public/icon.svg', MIME['.svg']] };
@@ -1018,6 +1025,7 @@ guest = GQ.create({
   cfg: () => GQ.clean({}, settings.guest), dataDir: CFG.dataDir, log, layout: LAYOUT,
   designs: () => db.designs, getDesign, playlists: () => db.playlists, player,
   holdDesign: () => db.playlist.hold || null, running: () => !!(db.playlist.running && player.running), live: () => Date.now() < liveUntil,
+  location: () => { const sc = db.schedule || {}; return typeof sc.lat === 'number' && typeof sc.lon === 'number' ? { lat: sc.lat, lon: sc.lon } : null; },
   scheduleOn: () => { const w = scheduleWant(new Date()); return !w ? { on: true } : { on: w.kind !== 'off', back: w.kind === 'off' ? backAt() : null }; },
 });
 guest.start();

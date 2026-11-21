@@ -89,8 +89,36 @@ async function update(k, fn, empty) {
   throw httpError(503, 'Busy right now. Try again.');
 }
 
+// ---------- activity log ----------
+// What guests did, for the owner: the page reports opens and taps (POST /api/log, in batches), this function adds what
+// it decides (sent, refused, cancelled). Kept in the 'events' item (the newest EVENTS_MAX, numbered); tree-show
+// collects them as it checks in (evAfter) and keeps its own log, where it also notes what played.
+// A visitor is a random id the page keeps on the phone (v), plus a hash of the address (who); no names, no addresses.
+const EVENTS_MAX = 2000, CLIENT_KINDS = ['open', 'cat', 'pick', 'color', 'line', 'reload', 'geo-ok', 'geo-denied', 'geo-far', 'leave'];
+function device(ev) {
+  const ua = String((ev.headers || {})['user-agent'] || '');
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'Other';
+  const br = /CriOS|Chrome\//.test(ua) && !/Edg/.test(ua) ? (/SamsungBrowser/.test(ua) ? 'Samsung' : 'Chrome') : /FxiOS|Firefox/.test(ua) ? 'Firefox' : /Edg/.test(ua) ? 'Edge' : /Safari/.test(ua) ? 'Safari' : 'Other';
+  return os + ' · ' + br;
+}
+const clip = (v, n) => String(v == null ? '' : v).slice(0, n);
+async function logEvents(list) {
+  if (!list.length) return;
+  await update('events', (E) => {
+    for (const e of list) E.list.push(Object.assign({ seq: ++E.seq }, e));
+    if (E.list.length > EVENTS_MAX) E.list.splice(0, E.list.length - EVENTS_MAX);
+    return {};
+  }, () => ({ seq: 0, list: [] }));
+}
+
 // ---------- helpers ----------
-function httpError(code, msg) { const e = new Error(msg); e.status = code; return e; }
+function httpError(code, msg, why) { const e = new Error(msg); e.status = code; if (why) e.why = why; return e; }
+// Nearby only (q.geo = { lat, lon, radius } from the tree): metres between two points.
+function meters(a, b, c, d) {
+  const R = 6371000, r = Math.PI / 180, x = Math.sin((c - a) * r / 2), y = Math.sin((d - b) * r / 2);
+  return 2 * R * Math.asin(Math.sqrt(x * x + Math.cos(a * r) * Math.cos(c * r) * y * y));
+}
+function far(m) { return m < 1000 ? Math.round(m / 10) * 10 + ' m' : m < 10000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m / 1000) + ' km'; }
 function reply(code, body, cache) {
   return { statusCode: code, headers: { 'content-type': 'application/json', 'cache-control': cache || 'no-store' }, body: JSON.stringify(body) };
 }
@@ -112,7 +140,7 @@ function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
   return {
     open, why: open ? null : now - q.seen >= TREE_STALE_MS ? 'offline' : q.why || 'closed', back: open ? null : q.back || null,
     reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
-    sec: q.sec, perGuest: share(q).max, busy: share(q).busy, cat: q.catHash || null, // cat: the design list's version
+    geo: !!q.geo, sec: q.sec, perGuest: share(q).max, busy: share(q).busy, cat: q.catHash || null, // cat: the design list's version
     now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
     items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
   };
@@ -143,7 +171,26 @@ export async function handler(ev) {
       const c = await store.get('catalog');
       return reply(200, c ? c.d : { hash: null, designs: [], favorites: [], layout: null }, 'public, max-age=30'); // pages ask with ?h=<hash> when it changed
     }
-    if (path === '/api/request' && method === 'POST') return await request(ev, body, now);
+    if (path === '/api/request' && method === 'POST') {
+      const base = { at: now, v: clip(body.v, 16), who: guestId(ev), dev: device(ev) };
+      try {
+        const r = await request(ev, body, now), j = JSON.parse(r.body);
+        await logEvents([Object.assign(base, { k: 'sent', t: j.t, id: clip(body.id, 40), name: j.name, msg: j.msg, colors: body.colors || [], dist: j.dist, pos: j.pos })]);
+        delete j.name; delete j.dist; r.body = JSON.stringify(j);
+        return r;
+      } catch (e) {
+        if (e.status && e.status < 500) await logEvents([Object.assign(base, { k: 'refused', id: clip(body.id, 40), why: e.why || null, reason: clip(e.message, 160), msg: clip(body.msg, 30) })]).catch(() => {});
+        throw e;
+      }
+    }
+    if (path === '/api/log' && method === 'POST') { // the page's batch of opens and taps
+      const v = clip(body.v, 16), who = guestId(ev), dev = device(ev);
+      const list = (Array.isArray(body.ev) ? body.ev : []).slice(0, 30).filter((e) => e && CLIENT_KINDS.includes(e.k)).map((e) => ({
+        at: Math.min(now, Math.max(now - 3600000, +e.at || now)), k: e.k, v, who, dev,
+        id: e.id ? clip(e.id, 40) : undefined, name: e.name ? clip(e.name, 60) : undefined, c: e.c ? clip(e.c, 60) : undefined }));
+      await logEvents(list);
+      return reply(200, { ok: true });
+    }
     if (path === '/api/cancel' && method === 'POST') {
       const t = String(body.t || '');
       const out = await update('queue', (q) => {
@@ -151,6 +198,7 @@ export async function handler(ev) {
         if (i < 0) return { skip: true, ok: false };
         q.items.splice(i, 1); return { ok: true };
       }, EMPTY);
+      if (out.ok) await logEvents([{ at: now, k: 'cancelled', t, v: clip(body.v, 16), who: guestId(ev), dev: device(ev) }]);
       return reply(out.ok ? 200 : 404, out.ok ? { ok: true } : { error: 'That request isn’t waiting any more.' });
     }
     if (path === '/api/tree' && method === 'POST') {
@@ -160,7 +208,7 @@ export async function handler(ev) {
     return reply(404, { error: 'Not found' });
   } catch (e) {
     if (!e.status) console.error(e);
-    return reply(e.status || 500, { error: e.status ? e.message : 'Something went wrong.' });
+    return reply(e.status || 500, Object.assign({ error: e.status ? e.message : 'Something went wrong.' }, e.why ? { why: e.why } : {}));
   }
 }
 
@@ -174,8 +222,15 @@ async function request(ev, b, now) {
   const m = checkMessage(b.msg);
   if (!m.ok) throw httpError(400, m.error);
   const who = guestId(ev), t = randomBytes(12).toString('base64url');
+  let dist = null; // how far from the tree, when the phone said (for the owner's log; rounded to 10 m)
   const out = await update('queue', (q) => {
     if (!treeOpen(q, now)) throw httpError(409, publicQueue(q, now).reason);
+    if (q.geo) { // only people near the tree (the phone's own reading; its accuracy is allowed for, up to 300 m)
+      const la = +b.lat, lo = +b.lon, acc = Math.min(300, Math.max(0, +b.acc || 0));
+      if (!isFinite(la) || !isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) throw httpError(428, 'Share your location so we know you’re near the tree.', 'location');
+      const d = meters(la, lo, q.geo.lat, q.geo.lon); dist = d;
+      if (d - acc > q.geo.radius) throw httpError(403, `You need to be near the tree to light it up. You’re about ${far(d)} away. Come by and try again!`, 'far');
+    }
     for (const k in q.rate) { const v = Array.isArray(q.rate[k]) ? q.rate[k][q.rate[k].length - 1] : q.rate[k]; if (now - v > FLOOD_MS) delete q.rate[k]; else q.rate[k] = v; }
     if (q.rate[who]) throw httpError(429, 'One moment… try again in a second or two.');
     const S = share(q, who), mine = q.items.filter((x) => x.who === who).length;
@@ -196,7 +251,7 @@ async function request(ev, b, now) {
     q.rate[who] = now;
     return { pos: at + 1 };
   }, EMPTY);
-  return reply(200, { ok: true, t, pos: out.pos, msg: m.text });
+  return reply(200, { ok: true, t, pos: out.pos, msg: m.text, name: d.name, dist: dist == null ? undefined : Math.round(dist / 10) * 10 });
 }
 
 // The tree checks in: whether it takes requests, what it's playing (a guest ticket, which leaves the queue), its
@@ -216,6 +271,7 @@ export async function treeSync(b, now) {
     for (const k in q.played || {}) { q.played[k] = q.played[k].filter((x) => now - x < FRESH_MS); if (!q.played[k].length) delete q.played[k]; }
     if (Array.isArray(b.drop)) q.items = q.items.filter((x) => !b.drop.includes(x.t)); // requests the tree can't play
     q.open = !!b.open; q.seen = now; q.sec = sec;
+    q.geo = b.geo && isFinite(+b.geo.lat) && isFinite(+b.geo.lon) ? { lat: +b.geo.lat, lon: +b.geo.lon, radius: Math.max(30, Math.min(5000, +b.geo.radius || 200)) } : null;
     q.why = b.open ? null : ['paused', 'resting', 'live', 'closed'].includes(b.why) ? b.why : 'closed'; q.back = b.open ? null : String(b.back || '').slice(0, 40) || null;
     if (b.limits) q.limits = { lineMin: +b.limits.lineMin }; q.reason = b.open ? null : String(b.reason || 'The tree isn’t taking requests right now.').slice(0, 120);
     const n = b.now && b.now.t ? b.now : null;
@@ -233,5 +289,8 @@ export async function treeSync(b, now) {
   const cat = await store.get('catalog');
   const h = cat ? cat.d.hash : null;
   if (h) await update('queue', (q) => (q.catHash === h ? { skip: true } : (q.catHash = h, {})), EMPTY); // pages reload the list when it changes
-  return reply(200, { items: out.items, catalogHash: h });
+  // the activity since the tree last collected it
+  let events = [], lastSeq = 0;
+  if (b.evAfter != null) { const E = await store.get('events'); if (E) { lastSeq = E.d.seq; events = E.d.list.filter((e) => e.seq > +b.evAfter).slice(0, 500); } }
+  return reply(200, { items: out.items, catalogHash: h, events, lastSeq });
 }
