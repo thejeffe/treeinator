@@ -157,6 +157,16 @@ function resolveWled() {
 resolveWled(); setInterval(resolveWled, 60000);
 const CHUNK = 480 * 3; // keeps each UDP packet under a 1500-byte MTU
 let dimBuf = null;
+// Packet buffers are reused instead of made new for every packet (~200 a second). A buffer must stay untouched until
+// the socket has sent it, so frames take turns through a ring of PKT_RING sets (a set is used again 4 frames later).
+const PKT_RING = 4; let pktSets = [], pktLen = 0, pktTurn = 0;
+function packetSet(len) {
+  if (len !== pktLen) {
+    pktLen = len; pktSets = [];
+    for (let r = 0; r < PKT_RING; r++) { const set = []; for (let off = 0; off < len; off += CHUNK) set.push(Buffer.alloc(10 + Math.min(CHUNK, len - off))); pktSets.push(set); }
+  }
+  pktTurn = (pktTurn + 1) % PKT_RING; return pktSets[pktTurn];
+}
 // Frames to the tree. With "Colors when dim" off, brightness is applied here
 // (rounding a second time); otherwise the frame was already dimmed and
 // dithered in one step (dither.js) and goes out as it is.
@@ -166,7 +176,13 @@ let dimBuf = null;
 // busy designs are dimmed, dim ones (fire) brightened, at most LEVEL_BOOST times. Applied before the general brightness,
 // so that still sets the overall level. A near-black picture (fades, the tree off) is left alone.
 const LEVEL_BOOST = 4;
-function levelCfg() { const l = settings.level || {}; const a = +(l.avg != null ? l.avg : l.max); return { on: l.on !== false, avg: a >= 2 && a <= 60 ? Math.round(a) : 15 }; }
+let levelMemo = { src: undefined, v: null }, ditherMemo = { src: undefined, v: null }; // worked out when the setting changes, not every frame
+function levelCfg() {
+  if (levelMemo.src === settings.level && levelMemo.v) return levelMemo.v;
+  const l = settings.level || {}; const a = +(l.avg != null ? l.avg : l.max);
+  levelMemo = { src: settings.level, v: { on: l.on !== false, avg: a >= 2 && a <= 60 ? Math.round(a) : 15 } }; return levelMemo.v;
+}
+function ditherCfg() { if (ditherMemo.src !== settings.dither || !ditherMemo.v) ditherMemo = { src: settings.dither, v: D.clean(settings.dither) }; return ditherMemo.v; }
 // levelGain (in light) multiplies the brightness setting. It is applied to the pixels, every frame, smoothly: never by
 // changing WLED's own brightness, which lags and made the tree flicker ("glitter") while a transition moved it in steps.
 // In "Dimming in WLED" WLED's bri16 stays fixed at the brightness setting x LEVEL_BOOST (up to full), changing only when
@@ -204,18 +220,19 @@ function levelBytes(bytes) { // WLED order, after gamma
 }
 function sendFrame(frame) {
   frame = levelFrame(frame);
-  const dz = D.clean(settings.dither);
+  const dz = ditherCfg();
   if (dz.mode === 'off') return sendDDP(E.toWled(frame, 1, wledBytes));
   if (dz.mode === 'wled') return sendDDP(ditherer.plainFrame(frame), true);   // WLED does gamma + dimming
   sendDDP(ditherer.frame(frame, masterBright(), dz.mode, dz.darkest), true);
 }
 function sendLive(bytes) {
   bytes = levelBytes(bytes);
-  const dz = D.clean(settings.dither);
+  const dz = ditherCfg();
   if (dz.mode === 'off') return sendDDP(bytes);
   if (dz.mode === 'wled') return sendDDP(ditherer.plainBytes(bytes), true);
   sendDDP(ditherer.bytes(bytes, masterBright(), dz.mode, dz.darkest), true);
 }
+function sendDone(err) { lastSendErr = err ? err.message : null; }
 function sendDDP(bytes, prepared) {
   if (!wledAddr) return;
   const mb = masterBright();
@@ -225,13 +242,13 @@ function sendDDP(bytes, prepared) {
     bytes = dimBuf;
   }
   seq = (seq % 15) + 1;
-  for (let off = 0; off < bytes.length; off += CHUNK) {
-    const data = bytes.subarray(off, Math.min(off + CHUNK, bytes.length));
-    const last = off + CHUNK >= bytes.length;
-    const h = Buffer.alloc(10);
-    h[0] = 0x40 | (last ? 0x01 : 0); h[1] = seq; h[2] = 0x01; h[3] = 0x01; // v1, push on last; RGB 8-bit; display
-    h.writeUInt32BE(off, 4); h.writeUInt16BE(data.length, 8);
-    udp.send(Buffer.concat([h, data]), CFG.wledPort, wledAddr, (err) => { if (err) lastSendErr = err.message; else lastSendErr = null; });
+  const set = packetSet(bytes.length);
+  for (let off = 0, k = 0; off < bytes.length; off += CHUNK, k++) {
+    const n = Math.min(CHUNK, bytes.length - off), last = off + CHUNK >= bytes.length, pkt = set[k];
+    pkt[0] = 0x40 | (last ? 0x01 : 0); pkt[1] = seq; pkt[2] = 0x01; pkt[3] = 0x01; // v1, push on last; RGB 8-bit; display
+    pkt.writeUInt32BE(off, 4); pkt.writeUInt16BE(n, 8);
+    pkt.set(bytes.subarray(off, off + n), 10);
+    udp.send(pkt, CFG.wledPort, wledAddr, sendDone);
   }
 }
 
@@ -373,7 +390,7 @@ let schedBright = null, brightOv = false, brKey = null;
 function baseBright() { if (schedBright != null) return schedBright; return db && db.bright != null ? db.bright : 1; } // the brightness setting
 // What the tree is sent at: the setting times Even brightness's gain, up to full (see levelFrame for the rest of a boost).
 function masterBright() {
-  if (D.clean(settings.dither).mode === 'wled') return Math.min(1, baseBright() * (levelCfg().on ? LEVEL_BOOST : 1)); // fixed: see levelStep
+  if (ditherCfg().mode === 'wled') return Math.min(1, baseBright() * (levelCfg().on ? LEVEL_BOOST : 1)); // fixed: see levelStep
   return Math.min(1, baseBright() * levelGain);
 }
 function updateSchedBright() {
@@ -414,7 +431,7 @@ setInterval(() => { if (Date.now() >= wledRetryAt) wledOn = null; wledDitherSent
 // fine brightness (bri16 from the general brightness) and gamma. Other modes turn it off.
 let wledDither, wledDitherSent = null, wledDitherRetryAt = 0, wledDitherLogged = null, wledDitherBusy = false;  // wledDither: undefined = not checked, null = stock WLED
 function wledDitherWant() {
-  const dz = D.clean(settings.dither);
+  const dz = ditherCfg();
   if (dz.mode !== 'wled') return { on: false };
   return { on: true, bri16: Math.max(1, Math.round(masterBright() * 65535)), g: LAYOUT.gamma, wb: [255, 255, 255], dark: dz.darkest, fps: dz.wledFps, minHz: dz.minHz };
 }
@@ -667,7 +684,15 @@ function nowInfo() { const d = new Date(); return { time: hhmm(d.getHours() * 60
 
 // ---------- HTTP ----------
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
-function send(res, code, body, type) { res.writeHead(code, { 'Content-Type': type || 'application/json', 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0', 'Pragma': 'no-cache', 'Expires': '0' }); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); }
+const NO_STORE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0', 'Pragma': 'no-cache', 'Expires': '0' };
+// cache: extra headers (default: never store, for the API)
+function send(res, code, body, type, cache) { res.writeHead(code, Object.assign({ 'Content-Type': type || 'application/json' }, cache || NO_STORE)); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); }
+// Browser caching. engine.js and config.js are linked as ?v=ASSET_V, which changes with the code and the tree layout, so
+// those copies can be kept for good; the page itself is checked each time (a quick "not changed" when it hasn't);
+// icons and the manifest are kept for a day.
+const ASSET_V = require('crypto').createHash('sha1').update(BUILD + JSON.stringify(LAYOUT)).digest('hex').slice(0, 10);
+const KEEP = { 'Cache-Control': 'public, max-age=31536000, immutable' }, DAY = { 'Cache-Control': 'public, max-age=86400' };
+let pageBuf = null; // index.html as served (read once: a new version comes with a restart)
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let n = 0; const chunks = [];
@@ -845,20 +870,27 @@ const server = http.createServer(async (req, res) => {
       log('Restart asked for from the web page'); send(res, 200, { ok: true, restarting: true }); setTimeout(shutdown, 300); return;
     }
     if (p === '/api/version') return send(res, 200, { build: BUILD });
-    if (p === '/config.js') return send(res, 200, `window.TREE_CONFIG=${JSON.stringify(LAYOUT)};`, 'text/javascript; charset=utf-8');
+    if (p === '/config.js') return send(res, 200, `window.TREE_CONFIG=${JSON.stringify(LAYOUT)};`, 'text/javascript; charset=utf-8', url.searchParams.get('v') === ASSET_V ? KEEP : NO_STORE);
     if (p.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
     // static files
     const file = path.normalize(path.join(PUBLIC, p === '/' ? 'index.html' : p));
     if (!file.startsWith(PUBLIC)) return send(res, 403, 'Forbidden', 'text/plain');
+    const isPage = path.basename(file) === 'index.html';
+    if (isPage) {
+      const etag = '"' + ASSET_V + '"';
+      if (req.headers['if-none-match'] === etag) { res.writeHead(304, { 'ETag': etag, 'Cache-Control': 'no-cache' }); return res.end(); }
+      if (!pageBuf) {
+        let buf = fs.readFileSync(file);
+        if (!/^\s*<!doctype/i.test(buf.slice(0, 20).toString())) buf = Buffer.concat([Buffer.from(PAGE_HEAD), buf]); // page source is written as a fragment; add the document shell
+        // stamp the version so scripts are never served from an old cache
+        pageBuf = Buffer.from(buf.toString().replace(/src="(config|engine)\.js"/g, `src="$1.js?v=${ASSET_V}"`).replace('<body>', `<body data-build="${BUILD}">`));
+      }
+      return send(res, 200, pageBuf, MIME['.html'], { 'Cache-Control': 'no-cache', 'ETag': etag });
+    }
     fs.readFile(file, (err, buf) => {
       if (err) return send(res, 404, 'Not found', 'text/plain');
-      if (path.basename(file) === 'index.html' && !/^\s*<!doctype/i.test(buf.slice(0, 20).toString())) {
-        buf = Buffer.concat([Buffer.from(PAGE_HEAD), buf]); // page source is written as a fragment; add the document shell
-      }
-      if (path.basename(file) === 'index.html') { // stamp the build so scripts are never served from an old cache
-        buf = Buffer.from(buf.toString().replace(/src="(config|engine)\.js"/g, `src="$1.js?v=${BUILD}"`).replace('<body>', `<body data-build="${BUILD}">`));
-      }
-      send(res, 200, buf, MIME[path.extname(file)] || 'application/octet-stream');
+      const ext = path.extname(file), versioned = url.searchParams.get('v') === ASSET_V;
+      send(res, 200, buf, MIME[ext] || 'application/octet-stream', versioned ? KEEP : ['.png', '.svg', '.ico', '.webmanifest'].includes(ext) ? DAY : NO_STORE);
     });
   } catch (e) {
     send(res, e.status || 400, { error: e.message });
