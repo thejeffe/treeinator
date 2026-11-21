@@ -97,7 +97,7 @@ function signShapes(link) {
   pixelText(sh, 'LIGHT UP', SW / 2, 13, 3);
   pixelText(sh, 'OUR TREE!', SW / 2, 39, 3);
   // the QR code: 118 mm, a hole in the middle for the TV
-  const c = codeWithHole(link), Q = 2, size = 118, mod = size / (c.n + Q * 2), qx = (SW - size) / 2, qy = 66, e = 0.02;
+  const c = codeWithHole(link), Q = 4, size = 124, mod = size / (c.n + Q * 2), qx = (SW - size) / 2, qy = 63, e = 0.02;
   for (let y = 0; y < c.n; y++) for (let x = 0; x < c.n; x++) {
     if (!c.dark(x, y) || (x > 0 && c.dark(x - 1, y))) continue;
     let r = x; while (r + 1 < c.n && c.dark(r + 1, y)) r++;
@@ -105,11 +105,11 @@ function signShapes(link) {
   }
   const [hx, hy, hs] = c.hole, pad = hs * 0.1;
   tvShapes(sh, qx + (hx + Q + pad) * mod, qy + (hy + Q + pad) * mod, (hs - 2 * pad) * mod);
-  pixelText(sh, 'SCAN ME', SW / 2, qy + size + 7, 2.4);
+  pixelText(sh, 'SCAN ME', SW / 2, qy + size + 6, 2.4);
   const shown = String(link).replace(/^https?:\/\//, '').replace(/\/$/, '').toUpperCase();
   const px = Math.min(1.4, (SW - 24) / (shown.length * 6));
-  pixelText(sh, shown, SW / 2, qy + size + 29, px);
-  pixelText(sh, 'TREE-MOTE CONTROL', SW / 2, qy + size + 29 + px * 7 + 7, 1.15);
+  pixelText(sh, shown, SW / 2, qy + size + 27, px);
+  pixelText(sh, 'TREE-MOTE CONTROL', SW / 2, qy + size + 27 + px * 7 + 5, 1.1);
   return sh;
 }
 // rounded rectangle path (y down), for SVG; the ring is two of them, the inner one wound the other way (even-odd)
@@ -161,4 +161,28 @@ function signPdf(link, title) {
   return Buffer.from(out, 'latin1');
 }
 
-module.exports = { qrSvg, signSvg, signPdf, logoSvg };
+// ---------- the 3D-printed sign (Bambu-size, two colours on white) ----------
+// printLayout(link) -> { w, h, holes, slots, red: [shapes], green: [shapes] } in mm, y down from the top edge.
+// tools/sign3d.py turns it into STL/3MF parts. 185 x 235 mm leaves room for the prime tower on a 256 mm bed.
+const PW3 = 185, PH3 = 235;
+function printLayout(link) {
+  const red = [], green = [], cx = PW3 / 2;
+  // text is drawn by tools/sign3d.py from a real font (smooth curves): { k: 'text', s, cx, top, h = capital height, maxw }
+  red.push({ k: 'text', s: 'LIGHT UP', cx, top: 18, h: 17, maxw: PW3 - 20 });
+  red.push({ k: 'text', s: 'OUR TREE!', cx, top: 41, h: 17, maxw: PW3 - 20 });
+  const c = codeWithHole(link), Q = 4, size = 124, mod = size / (c.n + Q * 2), qx = (PW3 - size) / 2, qy = 60, e = 0.02; // 4-module quiet zone
+  for (let y = 0; y < c.n; y++) for (let x = 0; x < c.n; x++) {
+    if (!c.dark(x, y) || (x > 0 && c.dark(x - 1, y))) continue;
+    let r = x; while (r + 1 < c.n && c.dark(r + 1, y)) r++;
+    green.push({ k: 'rect', x: qx + (x + Q) * mod - e, y: qy + (y + Q) * mod - e, w: (r - x + 1) * mod + 2 * e, h: mod + 2 * e });
+  }
+  const [hx, hy, hs] = c.hole, pad = hs * 0.1, tv = [];
+  tvShapes(tv, qx + (hx + Q + pad) * mod, qy + (hy + Q + pad) * mod, (hs - 2 * pad) * mod);
+  tv.forEach((s, i) => (i === 6 || i === 7 ? green : red).push(s));   // the tree and its trunk green, the TV red
+  green.push({ k: 'text', s: 'SCAN ME', cx, top: qy + size + 6, h: 12, maxw: PW3 - 30 });
+  const shown = String(link).replace(/^https?:\/\//, '').replace(/\/$/, '');
+  green.push({ k: 'text', s: shown, cx, top: qy + size + 25, h: 7, maxw: PW3 - 24 });
+  return { w: PW3, h: PH3, holes: [[cx, 8.5], [cx, PH3 - 8.5]], slots: [[cx - 15, 8.5], [cx + 15, 8.5], [cx - 15, PH3 - 8.5], [cx + 15, PH3 - 8.5]], red, green };
+}
+
+module.exports = { qrSvg, signSvg, signPdf, logoSvg, printLayout };

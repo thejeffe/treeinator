@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#0b1a12">
 <title>Light Up the Tree</title>
 <meta name="description" content="Pick what the Christmas tree shows next.">
@@ -10,7 +10,7 @@
 <style>
 :root{--bg:#0b1a12;--card:#12261b;--line:#24402f;--ink:#f3f6f1;--dim:#a9bdb0;--gold:#f2c14e;--red:#e0483e;--green:#3fbf6f}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;touch-action:manipulation} /* no double-tap zoom */
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:0 0 92px}
 main{max-width:560px;margin:0 auto;padding:0 12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-top:8px}
@@ -18,9 +18,9 @@ main{max-width:560px;margin:0 auto;padding:0 12px}
 .hide{display:none!important}
 /* scene with the title */
 /* the banner keeps the drawing's proportions (400 x 74): taller on wide screens, never cropped */
-.scene{position:relative;width:100%;aspect-ratio:400/74;max-height:180px;overflow:hidden;background:linear-gradient(#05101c,#0b1a12)}
+.scene{position:relative;width:100%;max-width:760px;margin:0 auto;aspect-ratio:400/74;overflow:hidden;background:linear-gradient(#05101c,#0b1a12);container-type:inline-size;border-radius:0 0 14px 14px}
 .scene svg{position:absolute;inset:0;width:100%;height:100%}
-.scene h1{position:absolute;left:3.6%;bottom:16%;margin:0;font-size:clamp(20px,5.6vw,46px);line-height:1.05;max-width:62%;text-shadow:0 2px 8px #000}
+.scene h1{position:absolute;left:3.6%;bottom:16%;margin:0;white-space:nowrap;font-size:clamp(14px,5.6vw,42px);font-size:5.6cqw;line-height:1.05;max-width:62%;text-shadow:0 2px 8px #000}
 .scene h1 span{color:var(--gold)}
 .reload,.share{position:absolute;top:4px;width:28px;height:28px;border:0;border-radius:50%;background:none;color:#fff;opacity:.45;padding:0;z-index:3;display:grid;place-items:center}
 .reload{left:6px}.share{left:34px}
@@ -93,7 +93,7 @@ canvas{width:108px;height:144px;display:block;border-radius:9px;background:#0508
 .go button{width:100%;font:inherit;font-size:17px;font-weight:700;padding:13px;border:0;border-radius:13px;background:var(--red);color:#fff;box-shadow:0 6px 20px #0008}
 .go button:disabled{background:#4b3a38;color:#c9b4b0}
 /* typing a message: the button stops floating (it would sit on top of the keyboard and the box), the box scrolls into view */
-body.tight .scene{max-height:58px}body.tight .scene h1{font-size:19px;bottom:8px}
+body.tight .scene{max-width:330px}
 body.tight canvas{width:90px;height:120px}body.tight .make{grid-template-columns:90px minmax(0,1fr)}
 body.tight .hint{display:none}
 /* typing: the button rides just above the keyboard (placeGo), with room to scroll the box above it */
@@ -427,10 +427,12 @@ $('msg').oninput = function () {
 var ROWS = 4;
 function fit() {
   if (document.body.classList.contains('typing')) return;     // the keyboard is up: scrolling to the box is fine
-  var g = $('designs'), fits = function () { return document.documentElement.scrollHeight <= window.innerHeight + 1; };
+  var g = $('designs'), sc = document.querySelector('.scene'), fits = function () { return document.documentElement.scrollHeight <= window.innerHeight + 1; };
   var tries = function () { for (ROWS = 4; ROWS >= 2; ROWS--) { g.style.gridTemplateRows = 'repeat(' + ROWS + ',auto)'; if (fits()) return true; } return false; };
-  document.body.classList.remove('tight');
-  if (!tries()) { document.body.classList.add('tight'); tries(); } // small phones: smaller banner and preview too
+  document.body.classList.remove('tight'); sc.style.maxWidth = '';
+  if (tries()) return;
+  for (var w of [560, 420]) { sc.style.maxWidth = w + 'px'; if (tries()) return; } // a smaller banner, same shape
+  sc.style.maxWidth = ''; document.body.classList.add('tight'); tries();                // the smallest: banner and preview
 }
 window.addEventListener('resize', function () { clearTimeout(fit.t); fit.t = setTimeout(fit, 120); });
 // The phone's keyboard: keep the message box in sight above it.
@@ -514,6 +516,9 @@ function send() {
     say(e.message); setGo();
   });
 }
+// No zooming (iPhone Safari ignores user-scalable=no for pinches, so stop the gesture itself).
+['gesturestart', 'gesturechange'].forEach(function (k) { document.addEventListener(k, function (e) { e.preventDefault(); }, { passive: false }); });
+document.addEventListener('touchmove', function (e) { if (e.touches.length > 1 || (e.scale !== undefined && e.scale !== 1)) e.preventDefault(); }, { passive: false });
 // Santa drops a present into the tree, and the tree hops for joy.
 function celebrate() {
   var g = $('gift'), t = $('tree');
