@@ -102,8 +102,10 @@ if (!aws(['s3api', 'head-bucket', '--bucket', BUCKET], { ok: ['404', 'Not Found'
 }
 st.bucket = BUCKET; save();
 const files = [['index.html', 'guestcloud/site/index.html', 'text/html; charset=utf-8', 'no-cache'], ['engine.js', 'public/engine.js', 'text/javascript; charset=utf-8', 'public, max-age=300'],
-  ['guestlook.js', 'public/guestlook.js', 'text/javascript; charset=utf-8', 'public, max-age=300'], ['icon.svg', 'public/icon.svg', 'image/svg+xml', 'public, max-age=86400'],
-  ['apple-touch-icon.png', 'guestcloud/site/apple-touch-icon.png', 'image/png', 'public, max-age=86400']];
+  ['guestlook.js', 'public/guestlook.js', 'text/javascript; charset=utf-8', 'public, max-age=300'], ['icon.svg', 'guestcloud/site/icon.svg', 'image/svg+xml', 'public, max-age=3600'],
+  ['icon-192.png', 'guestcloud/site/icon-192.png', 'image/png', 'public, max-age=3600'], ['icon-512.png', 'guestcloud/site/icon-512.png', 'image/png', 'public, max-age=3600'],
+  ['manifest.webmanifest', 'guestcloud/site/manifest.webmanifest', 'application/manifest+json', 'public, max-age=3600'],
+  ['apple-touch-icon.png', 'guestcloud/site/apple-touch-icon.png', 'image/png', 'public, max-age=3600']];
 for (const [key, src, type, cache] of files) aws(['s3api', 'put-object', '--bucket', BUCKET, '--key', key, '--body', path.join(ROOT, src), '--content-type', type, '--cache-control', cache]);
 say('Page files uploaded');
 
@@ -148,7 +150,7 @@ if (!dist) {
   dist = aws(['cloudfront', 'create-distribution', '--distribution-config', 'file://' + tmp('cf.json', cfg)]).Distribution;
 } else {
   say('CloudFront distribution is there; refreshing the page');
-  aws(['cloudfront', 'create-invalidation', '--distribution-id', dist.Id, '--paths', '/index.html', '/engine.js', '/guestlook.js', '/']);
+  aws(['cloudfront', 'create-invalidation', '--distribution-id', dist.Id, '--paths', '/*']);
 }
 st.distribution = dist.Id; save();
 const DIST_ARN = `arn:aws:cloudfront::${ACCOUNT}:distribution/${dist.Id}`;
