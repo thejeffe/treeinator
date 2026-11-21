@@ -53,8 +53,16 @@ main{max-width:560px;margin:0 auto;padding:0 12px}
 .designs::-webkit-scrollbar{display:none}
 .chip{font:inherit;font-size:14px;color:var(--ink);background:#173123;border:1px solid var(--line);border-radius:10px;padding:6px 10px;white-space:nowrap}
 .chip[aria-pressed=true]{background:var(--ink);color:#0b1a12;border-color:var(--ink);font-weight:700}
-.findRow{display:flex;gap:6px;align-items:center}.findRow>.row{flex:1;min-width:0}
-.cats .srch{font-size:14px;padding:5px 9px}
+/* sideways rows: a soft fade and a gold chevron on whichever side has more (cue()) */
+.scroller{position:relative}
+.scroller::before,.scroller::after{position:absolute;top:0;bottom:2px;width:30px;display:flex;align-items:center;color:var(--gold);font-size:22px;font-weight:700;pointer-events:none;opacity:0;transition:opacity .25s;z-index:2}
+.scroller::after{content:'\203A';right:-2px;justify-content:flex-end;padding-right:2px;background:linear-gradient(90deg,transparent,var(--card) 65%)}
+.scroller::before{content:'\2039';left:-2px;justify-content:flex-start;padding-left:2px;background:linear-gradient(270deg,transparent,var(--card) 65%)}
+.scroller.more-r::after,.scroller.more-l::before{opacity:1}
+.scroller.more-r::after{animation:nudge 1.6s ease-in-out 3}
+@keyframes nudge{50%{transform:translateX(3px)}}
+.designs.hint{animation:peek 1.2s ease-in-out 1 .6s}
+@keyframes peek{40%{transform:translateX(-26px)}}
 input[type=search],input[type=text]{width:100%;font:inherit;font-size:16px;color:var(--ink);background:#0d1c14;border:1px solid var(--line);border-radius:9px;padding:8px 10px;min-width:0}
 input:focus{outline:2px solid var(--gold);outline-offset:1px}
 /* preview beside colors and message */
@@ -74,14 +82,17 @@ canvas{width:108px;height:144px;display:block;border-radius:9px;background:#0508
 .go div{max-width:560px;margin:0 auto}
 .go p{margin:0 0 6px;font-size:14px;text-align:center;min-height:1.2em;color:#ffb4a8;text-shadow:0 1px 4px #000}
 .go p.ok{color:#bff0cf}
+.go button svg{width:24px;height:24px;vertical-align:-6px;margin-right:8px}
+.go button:disabled svg{opacity:.5}
 .go button{width:100%;font:inherit;font-size:17px;font-weight:700;padding:13px;border:0;border-radius:13px;background:var(--red);color:#fff;box-shadow:0 6px 20px #0008}
 .go button:disabled{background:#4b3a38;color:#c9b4b0}
 /* typing a message: the button stops floating (it would sit on top of the keyboard and the box), the box scrolls into view */
 body.tight .scene{height:56px}body.tight .scene h1{font-size:19px;bottom:8px}
 body.tight canvas{width:90px;height:120px}body.tight .make{grid-template-columns:90px minmax(0,1fr)}
 body.tight .hint{display:none}
-body.typing{padding-bottom:0}
-body.typing .go{position:static;background:none;padding-top:10px}
+/* typing: the button rides just above the keyboard (placeGo), with room to scroll the box above it */
+body.typing{padding-bottom:45vh}
+body.typing .go p{display:none}
 /* ---- the scene: a tree in a Santa hat, and Santa flying by (original cartoon) ---- */
 .star{animation:tw 3s infinite ease-in-out}
 @keyframes tw{50%{opacity:.2}}
@@ -105,12 +116,26 @@ body.typing .go{position:static;background:none;padding-top:10px}
 .gift{opacity:0}
 .gift.drop{animation:drop 1.1s ease-in forwards}
 @keyframes drop{0%{opacity:1;transform:translate(0,-140px) rotate(-30deg)}85%{opacity:1;transform:translate(0,0) rotate(10deg)}100%{opacity:0;transform:translate(0,4px)}}
+/* the remote zaps the TV every 5 s: a beam, a flash of static, another channel */
+.beam,.static{opacity:0}
+.beam{animation:zap 5s infinite}
+@keyframes zap{0%,68%{opacity:0}70%,78%{opacity:1}80%,100%{opacity:0}}
+.led{animation:led 5s infinite}
+@keyframes led{0%,68%,80%,100%{fill:#5a2a2a}70%,78%{fill:#ff6060}}
+.static{animation:stat 5s infinite steps(1)}
+@keyframes stat{0%,76%{opacity:0}77%{opacity:.9}79%{opacity:.6}81%{opacity:.85}83%,100%{opacity:0}}
+.chan{animation:chan 20s infinite steps(1)}
+@keyframes chan{0%{fill:#0c3a24}25%{fill:#3a0c12}50%{fill:#0c1f3a}75%{fill:#2e2a08}}
 @media (prefers-reduced-motion:reduce){.scene *{animation:none!important}}
 </style>
 </head>
 <body>
 <div class="scene" aria-hidden="false">
 <svg viewBox="0 98 400 74" preserveAspectRatio="xMidYMax slice">
+ <defs>
+  <radialGradient id="glass" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".5" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></radialGradient>
+  <pattern id="noise" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="4" fill="#777"/><rect width="1" height="1" fill="#eee"/><rect x="2" y="1" width="1" height="1" fill="#333"/><rect x="1" y="3" width="1" height="1" fill="#ddd"/><rect x="3" y="2" width="1" height="1" fill="#222"/></pattern>
+ </defs>
  <g fill="#fff"><circle class="star" cx="250" cy="104" r="1.1"/><circle class="star" cx="380" cy="112" r="1" style="animation-delay:-1.2s"/><circle class="star" cx="290" cy="130" r=".9" style="animation-delay:-2.1s"/><circle class="star" cx="40" cy="30" r="1.2"/><circle class="star" cx="110" cy="18" r="1" style="animation-delay:-1s"/><circle class="star" cx="300" cy="24" r="1.3" style="animation-delay:-2s"/><circle class="star" cx="350" cy="60" r="1" style="animation-delay:-.5s"/><circle class="star" cx="200" cy="12" r="1.1" style="animation-delay:-1.6s"/><circle class="star" cx="75" cy="70" r=".9" style="animation-delay:-2.4s"/><circle class="star" cx="380" cy="14" r="1" style="animation-delay:-.9s"/></g>
  <ellipse cx="200" cy="176" rx="260" ry="22" fill="#e9f3f7"/>
  <!-- Santa's sleigh with one reindeer, flying left to right -->
@@ -129,8 +154,33 @@ body.typing .go{position:static;background:none;padding-top:10px}
   </g>
   <g class="ho"><rect x="-8" y="6" width="60" height="20" rx="10" fill="#fff"/><text x="22" y="20" text-anchor="middle" font-size="11" font-weight="700" fill="#c0262d">HO HO HO!</text></g>
  </g></g></g>
+ <!-- a classic 80s TV (wood cabinet, rabbit ears) showing a little tree, and a retro remote that zaps it -->
+ <g>
+  <path d="M268 129 L256 109 M276 129 L289 107" stroke="#c8ccd4" stroke-width="1.3" stroke-linecap="round"/>
+  <circle cx="256" cy="109" r="1.6" fill="#e8ecf2"/><circle cx="289" cy="107" r="1.6" fill="#e8ecf2"/>
+  <rect x="268" y="127" width="8" height="3" rx="1" fill="#555"/>
+  <path d="M251 164 l-3 6 M293 164 l3 6" stroke="#4a2e14" stroke-width="2.2" stroke-linecap="round"/>
+  <rect x="246" y="129" width="52" height="36" rx="4" fill="#8a5a2b"/>
+  <path d="M248 136 h48 M248 146 h48 M248 156 h48" stroke="#734a22" stroke-width=".8" opacity=".7"/>
+  <rect x="249" y="132" width="34" height="30" rx="7" fill="#1a1a1a"/>
+  <rect class="chan" style="animation-delay:-1.1s" x="252" y="135" width="28" height="24" rx="6" fill="#0c3a24"/>
+  <g class="scr"><path d="M266 139 l7 10 h-3 l5 6 h-18 l5-6 h-3 z" fill="#2fbf5f"/><circle class="bulb" cx="263" cy="150" r="1" fill="#ff3b3b"/><circle class="bulb" cx="269" cy="152" r="1" fill="#ffd23b" style="animation-delay:-.5s"/><circle cx="266" cy="138" r="1.3" fill="#ffd23b"/></g>
+  <rect class="static" x="252" y="135" width="28" height="24" rx="6" fill="url(#noise)"/>
+  <rect x="252" y="135" width="28" height="24" rx="6" fill="url(#glass)"/>
+  <rect x="285" y="133" width="10" height="28" rx="2" fill="#6e4521"/>
+  <circle cx="290" cy="139" r="3" fill="#2a2a2a"/><circle cx="290" cy="147" r="3" fill="#2a2a2a"/><path d="M290 139 l0-2.4 M290 147 l2-1.6" stroke="#ccc" stroke-width=".8"/>
+  <rect x="286.5" y="153" width="7" height="2" rx="1" fill="#2a2a2a"/><rect x="286.5" y="157" width="7" height="2" rx="1" fill="#2a2a2a"/>
+ </g>
+ <g transform="translate(234,113) rotate(143)">
+  <rect x="-5" y="-14" width="10" height="28" rx="2.5" fill="#2b2b30"/>
+  <rect x="-3.5" y="-12" width="7" height="4" rx="1" fill="#55555c"/>
+  <circle cx="0" cy="-4" r="1.6" fill="#e0483e"/>
+  <circle cx="-2" cy="1" r=".9" fill="#bbb"/><circle cx="2" cy="1" r=".9" fill="#bbb"/><circle cx="-2" cy="4.5" r=".9" fill="#bbb"/><circle cx="2" cy="4.5" r=".9" fill="#bbb"/><circle cx="-2" cy="8" r=".9" fill="#bbb"/><circle cx="2" cy="8" r=".9" fill="#bbb"/>
+  <circle class="led" cx="0" cy="-14" r="1.2" fill="#ff6060"/>
+ </g>
+ <path class="beam" d="M244 126 L258 140" stroke="#ff8080" stroke-width="1.2" stroke-dasharray="2 2" stroke-linecap="round"/>
  <!-- the tree, in a Santa hat, with googly eyes -->
- <g transform="translate(230,86) scale(.5)"><g class="tree" id="tree">
+ <g transform="translate(244,86) scale(.5)"><g class="tree" id="tree">
   <rect x="193" y="150" width="14" height="14" fill="#7a4a24"/>
   <path d="M200 52 L240 104 H222 L252 140 H232 L262 158 H138 L168 140 H148 L178 104 H160 Z" fill="#1f8a4c"/>
   <path d="M200 52 L240 104 H222 L252 140 H232 L262 158 H200 Z" fill="#000" opacity=".12"/>
@@ -142,7 +192,7 @@ body.typing .go{position:static;background:none;padding-top:10px}
   <path d="M176 60 Q200 10 232 40 L222 64 Z" fill="#d42a2a"/><rect x="172" y="58" width="56" height="10" rx="5" fill="#fff"/>
   <g transform="translate(232,40)"><circle class="pom" cx="0" cy="0" r="6" fill="#fff"/></g>
  </g>
- </g><g transform="translate(330,118) scale(.6)"><g class="gift" id="gift"><rect x="-7" y="-7" width="14" height="12" rx="1.5" fill="#3bb3ff"/><rect x="-1.2" y="-7" width="2.4" height="12" fill="#ffd23b"/><path d="M0-7 q-6-6-6 0 m6 0 q6-6 6 0" stroke="#ffd23b" stroke-width="1.6" fill="none"/></g></g>
+ </g><g transform="translate(344,118) scale(.6)"><g class="gift" id="gift"><rect x="-7" y="-7" width="14" height="12" rx="1.5" fill="#3bb3ff"/><rect x="-1.2" y="-7" width="2.4" height="12" fill="#ffd23b"/><path d="M0-7 q-6-6-6 0 m6 0 q6-6 6 0" stroke="#ffd23b" stroke-width="1.6" fill="none"/></g></g>
 </svg>
 <h1 id="title">Light Up the <span>Tree</span></h1>
 </div>
@@ -154,9 +204,8 @@ body.typing .go{position:static;background:none;padding-top:10px}
 </div>
 
 <div class="card">
- <div class="findRow"><div class="row cats" id="cats" role="tablist" aria-label="Categories"></div></div>
- <div class="designs" id="designs" aria-label="Designs"></div>
- <input type="search" id="find" class="hide" placeholder="Search all designs" autocomplete="off" aria-label="Search designs" style="margin-top:8px">
+ <div class="scroller"><div class="row cats" id="cats" role="tablist" aria-label="Categories"></div></div>
+ <div class="scroller"><div class="designs" id="designs" aria-label="Designs"></div></div>
 </div>
 
 <div class="card make">
@@ -169,14 +218,14 @@ body.typing .go{position:static;background:none;padding-top:10px}
  </div>
 </div>
 </main>
-<div class="go"><div><p id="err" role="status"></p><button type="button" id="go" disabled>Pick a design</button></div></div>
+<div class="go" id="goBar"><div><p id="err" role="status"></p><button type="button" id="go" disabled>Pick a design</button></div></div>
 
 <script>
 'use strict';
 var $ = function (id) { return document.getElementById(id); };
 var PAL = [['#ff1a1a','Red'],['#ff7a00','Orange'],['#ffd400','Gold'],['#2ee66b','Green'],['#00c8ff','Ice'],['#2b5cff','Blue'],['#8a2bff','Purple'],['#ff4fd8','Pink'],['#ffffff','White']];
 var CAT = null, E = null, G = null, sel = null, colors = [], tickets = [], curCat = null, lineOpen = false;
-var PER_GUEST = 5; // requests one phone can have waiting (the site says, with each check)
+var PER_GUEST = 13; // requests one phone may have waiting right now (the site says: it shrinks when the line is busy)
 try { tickets = JSON.parse(localStorage.getItem('treeTickets') || '[]').filter(function (t) { return typeof t === 'string'; }).slice(-25); } catch (e) {}
 function saveTickets() { try { localStorage.setItem('treeTickets', JSON.stringify(tickets)); } catch (e) {} }
 var ALLOWED = /^[A-Z0-9 !?.,'\-&*+#:♥]*$/;
@@ -244,12 +293,9 @@ function buildLists() {
   var rank = (E && E.CATS) || [];
   order.sort(function (a, b) { var x = rank.indexOf(a), y = rank.indexOf(b); return (x < 0 ? 999 : x) - (y < 0 ? 999 : y); });
   if (favs.length) { groups['★ Favorites'] = favs; order.unshift('★ Favorites'); }
-  var sb = document.createElement('button'); sb.type = 'button'; sb.className = 'srch'; sb.textContent = '🔍'; sb.title = 'Search'; sb.setAttribute('aria-label', 'Search designs');
-  sb.onclick = function () { var f = $('find'); f.classList.toggle('hide'); if (!f.classList.contains('hide')) f.focus(); else { f.value = ''; showCat(curCat); } };
-  $('cats').appendChild(sb);
   order.forEach(function (c) {
     var b = document.createElement('button'); b.type = 'button'; b.textContent = c.replace('Christmas · ', ''); b.title = c; b.dataset.c = c;
-    b.onclick = function () { $('find').value = ''; showCat(c); }; $('cats').appendChild(b);
+    b.onclick = function () { showCat(c); b.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' }); }; $('cats').appendChild(b);
   });
   showCat(order[0]);
 }
@@ -259,19 +305,21 @@ function showList(list) {
     var b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = d.name; b.dataset.id = d.id;
     b.setAttribute('aria-pressed', String(!!sel && sel.id === d.id)); b.onclick = function () { pick(d.id); }; w.appendChild(b);
   });
-  w.scrollLeft = 0;
+  w.scrollLeft = 0; cue(w);
 }
 function showCat(c) {
   curCat = c;
   document.querySelectorAll('#cats button[data-c]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.c === c)); });
   showList(groups[c] || []);
 }
-$('find').oninput = function () {
-  var q = this.value.trim().toLowerCase();
-  if (!q) return showCat(curCat);
-  document.querySelectorAll('#cats button').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
-  showList(CAT.designs.filter(function (d) { return d.name.toLowerCase().indexOf(q) >= 0; }));
-};
+// "more this way" cues on the sideways rows
+function cue(el) {
+  var w = el.parentNode;
+  w.classList.toggle('more-r', el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  w.classList.toggle('more-l', el.scrollLeft > 4);
+}
+['cats', 'designs'].forEach(function (id) { $(id).addEventListener('scroll', function () { cue(this); }, { passive: true }); });
+window.addEventListener('resize', function () { cue($('cats')); cue($('designs')); });
 function pick(id) {
   sel = CAT.designs.find(function (d) { return d.id === id; }) || null;
   document.querySelectorAll('.chip').forEach(function (b) { b.setAttribute('aria-pressed', String(!!sel && b.dataset.id === sel.id)); });
@@ -315,21 +363,37 @@ function fit() {
 }
 window.addEventListener('resize', function () { clearTimeout(fit.t); fit.t = setTimeout(fit, 120); });
 // The phone's keyboard: keep the message box in sight above it.
-function boxInView() { $('msg').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+// The button sits on top of the keyboard: the keyboard shrinks the visible area (visualViewport), not the page.
+function placeGo() {
+  var vv = window.visualViewport, off = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+  $('goBar').style.bottom = off + 'px';
+}
+// Scroll so the message box sits just above the button.
+function boxInView() {
+  placeGo();
+  var vv = window.visualViewport, top = vv ? vv.offsetTop : 0, h = vv ? vv.height : window.innerHeight;
+  var r = $('msg').getBoundingClientRect(), barTop = top + h - $('goBar').offsetHeight;
+  var want = barTop - 12, d = r.bottom - want;
+  if (d > 0 || r.top < top + 8) window.scrollBy({ top: r.top < top + 8 ? r.top - top - 8 : d, behavior: 'smooth' });
+}
 $('msg').addEventListener('focus', function () { document.body.classList.add('typing'); setTimeout(boxInView, 350); });
 $('msg').addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== $('msg')) { document.body.classList.remove('typing'); fit(); } }, 150); });
-if (window.visualViewport) visualViewport.addEventListener('resize', function () { if (document.activeElement === $('msg')) boxInView(); });
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', function () { placeGo(); if (document.activeElement === $('msg')) boxInView(); });
+  visualViewport.addEventListener('scroll', placeGo);
+}
 $('heart').onclick = function () { var m = $('msg'); if (m.value.length < 24) { m.value += '♥'; m.oninput(); } };
 $('heart').addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep the keyboard up
+var ZAP = '<svg viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(-35 8 15)"><rect x="5" y="9" width="6" height="13" rx="1.6" fill="#fff"/><circle cx="8" cy="12" r="1.2" fill="#e0483e"/><circle cx="7" cy="15.5" r=".7" fill="#e0483e"/><circle cx="9" cy="15.5" r=".7" fill="#e0483e"/><circle cx="7" cy="18" r=".7" fill="#e0483e"/><circle cx="9" cy="18" r=".7" fill="#e0483e"/></g><path d="M14 4l2 3M18 3l-.2 3.4M20.5 6.5l-3 1.6" stroke="#ffd23b" stroke-width="1.8" stroke-linecap="round"/></svg>';
 function inLine() { return myCount >= PER_GUEST; }
 function setGo() {
   var b = $('go'), open = lastQ && lastQ.open, v = msgVal();
   b.disabled = !sel || !open || !ALLOWED.test(v) || inLine();
-  b.textContent = !open ? 'The tree is resting' : inLine() ? 'You have ' + PER_GUEST + ' in line' : !sel ? 'Pick a design' : myCount ? 'Add it to the line' : 'Put it on the tree';
+  b.innerHTML = (open && sel && !inLine() ? ZAP : '') + (!open ? 'The tree is resting' : inLine() ? (lastQ && lastQ.busy ? 'Busy line · wait for one of yours' : 'You’re lined up · wait for one to play') : !sel ? 'Pick a design' : myCount ? 'Add it to the line' : 'Put it on the tree');
 }
 $('go').onclick = function () {
   if (!sel) return;
-  var b = $('go'); b.disabled = true; b.textContent = 'Sending…';
+  var b = $('go'); b.disabled = true; b.innerHTML = ZAP + 'Sending…';
   api('request', { id: sel.id, colors: colors, msg: msgVal().replace(/♥/g, '<') }).then(function (j) {
     tickets.push(j.t); tickets = tickets.slice(-25); saveTickets(); myCount++;
     say('You’re in line! Number ' + j.pos + '.', true); celebrate(); poll();
@@ -381,7 +445,8 @@ api('catalog').then(function (c) {
     E = window.TreeEngine; G = window.GuestLook; frame = new Float32Array(E.N * 3);
     buildLists();
     var first = (groups[order[0]] || [])[0]; if (first) pick(first.id);
-    fit();
+    fit(); cue($('cats')); cue($('designs'));
+    if ($('designs').scrollWidth > $('designs').clientWidth + 4) { $('designs').classList.add('hint'); setTimeout(function () { $('designs').classList.remove('hint'); }, 2200); }
     requestAnimationFrame(tick);
   });
 }).catch(function () { say('Couldn’t load the designs. Pull down to try again.'); });

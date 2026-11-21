@@ -11,13 +11,28 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { checkMessage } from './words.mjs';
 
-const QUEUE_MAX = 30;            // waiting requests
-// Per phone (address), set in tree-show (Settings -> Guests) and sent with each check-in:
-// up to `waiting` requests in the line at once, and `sent` requests in any `windowMin` minutes.
-const LIMITS = { waiting: 5, sent: 10, windowMin: 10 };
-function limitsOf(q) {
-  const l = Object.assign({}, LIMITS, q.limits || {});
-  return { waiting: Math.max(1, Math.min(20, l.waiting | 0)), sent: Math.max(1, Math.min(60, l.sent | 0)), windowMin: Math.max(1, Math.min(120, l.windowMin | 0)) };
+// How much one phone (address) may line up. The line is measured in tree time: `lineMin` minutes (set in tree-show,
+// Settings -> Guests, sent with each check-in) is `cap` requests at `sec` seconds each.
+//  - quiet (the whole line is shorter than that): anyone may line up to `cap` of their own
+//  - busy (the line is that long or longer): a fair share each, cap / (guests waiting, counting a newcomer), at least 1,
+//    so a newcomer always gets a turn and nobody fills the line
+// Only scripts are stopped otherwise: QUEUE_MAX in the whole line, one request per FLOOD_MS per phone.
+const QUEUE_MAX = 60, FLOOD_MS = 2000;
+const FRESH_MS = 30 * 60 * 1000; // a guest's plays count against their place in line for 30 minutes
+// How many of each guest's requests have played in the last 30 minutes (q.played: who -> [times]).
+function playedRecently(q, now) {
+  const out = {};
+  for (const k in q.played || {}) { const v = q.played[k].filter((x) => now - x < FRESH_MS); if (v.length) out[k] = v.length; }
+  return out;
+}
+function share(q, who) {
+  const lineMin = Math.max(1, Math.min(60, +((q.limits || {}).lineMin) || 10));
+  const cap = Math.max(1, Math.floor(lineMin * 60 / (q.sec || 45)));
+  const busy = q.items.length >= cap;
+  if (!busy) return { cap, busy, max: cap, lineMin };
+  const guests = new Set(q.items.map((x) => x.who));
+  if (who) guests.add(who);
+  return { cap, busy, max: Math.max(1, Math.floor(cap / Math.max(1, guests.size))), lineMin };
 }
 const TREE_STALE_MS = 30 * 1000; // no word from the tree for this long: requests are closed
 const COLOR = /^#[0-9a-f]{6}$/;
@@ -96,7 +111,7 @@ function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
   const open = treeOpen(q, now);
   return {
     open, reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
-    sec: q.sec, perGuest: limitsOf(q).waiting,
+    sec: q.sec, perGuest: share(q).max, busy: share(q).busy,
     now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
     items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
   };
@@ -160,21 +175,25 @@ async function request(ev, b, now) {
   const who = guestId(ev), t = randomBytes(12).toString('base64url');
   const out = await update('queue', (q) => {
     if (!treeOpen(q, now)) throw httpError(409, publicQueue(q, now).reason);
-    const L = limitsOf(q), WINDOW_MS = L.windowMin * 60000;
-    for (const k in q.rate) { // times each guest sent a request, within the window
-      const v = (Array.isArray(q.rate[k]) ? q.rate[k] : [q.rate[k]]).filter((x) => now - x < WINDOW_MS);
-      if (v.length) q.rate[k] = v; else delete q.rate[k];
-    }
-    if (q.items.filter((x) => x.who === who).length >= L.waiting) throw httpError(429, `You have ${L.waiting} waiting already. Once one is on the tree you can add another.`);
-    const sent = q.rate[who] || [];
-    if (sent.length >= L.sent) {
-      const wait = Math.ceil((sent[0] + WINDOW_MS - now) / 1000);
-      throw httpError(429, `That’s ${L.sent} in ${L.windowMin} minute${L.windowMin > 1 ? 's' : ''}. You can send another in ${wait < 60 ? wait + ' seconds' : Math.ceil(wait / 60) + ' min'}.`);
-    }
+    for (const k in q.rate) { const v = Array.isArray(q.rate[k]) ? q.rate[k][q.rate[k].length - 1] : q.rate[k]; if (now - v > FLOOD_MS) delete q.rate[k]; else q.rate[k] = v; }
+    if (q.rate[who]) throw httpError(429, 'One moment… try again in a second or two.');
+    const S = share(q, who), mine = q.items.filter((x) => x.who === who).length;
+    if (mine >= S.max) throw httpError(429, S.busy
+      ? `The line is busy, so everyone gets a turn: you have ${mine} waiting. You can add another when one of yours has played.`
+      : `You have ${S.lineMin} minutes of the tree lined up already. You can add another when one of yours has played.`);
     if (q.items.length >= QUEUE_MAX) throw httpError(429, 'The queue is full right now. Try again in a few minutes.');
-    q.items.push({ t, who, id: d.id, name: d.name, colors, msg: m.text, at: now });
-    q.rate[who] = sent.concat(now);
-    return { pos: q.items.length };
+    // Round-robin by guest: everyone's 1st request plays before anyone's 2nd, and so on, counting what each guest has
+    // had played in the last 30 minutes too. A newcomer lands after the other guests' first picks, ahead of the extra
+    // ones of someone who filled the line; 30 minutes after their last play, a guest counts as new again.
+    const pr = playedRecently(q, now), round = (pr[who] || 0) + mine, seen = {};
+    let at = q.items.length;
+    for (let i = 0; i < q.items.length; i++) {
+      const w = q.items[i].who, r = (pr[w] || 0) + (seen[w] = (seen[w] || 0) + 1) - 1; // that guest's round for this item
+      if (r > round) { at = i; break; }
+    }
+    q.items.splice(at, 0, { t, who, id: d.id, name: d.name, colors, msg: m.text, at: now });
+    q.rate[who] = now;
+    return { pos: at + 1 };
   }, EMPTY);
   return reply(200, { ok: true, t, pos: out.pos, msg: m.text });
 }
@@ -193,13 +212,18 @@ export async function treeSync(b, now) {
   }
   const out = await update('queue', (q) => {
     if (b.clear) q.items = [];                                     // the owner cleared the queue
+    for (const k in q.played || {}) { q.played[k] = q.played[k].filter((x) => now - x < FRESH_MS); if (!q.played[k].length) delete q.played[k]; }
     if (Array.isArray(b.drop)) q.items = q.items.filter((x) => !b.drop.includes(x.t)); // requests the tree can't play
     q.open = !!b.open; q.seen = now; q.sec = sec;
-    if (b.limits) q.limits = { waiting: +b.limits.waiting, sent: +b.limits.sent, windowMin: +b.limits.windowMin }; q.reason = b.open ? null : String(b.reason || 'The tree isn’t taking requests right now.').slice(0, 120);
+    if (b.limits) q.limits = { lineMin: +b.limits.lineMin }; q.reason = b.open ? null : String(b.reason || 'The tree isn’t taking requests right now.').slice(0, 120);
     const n = b.now && b.now.t ? b.now : null;
     if (n) {
       const i = q.items.findIndex((x) => x.t === n.t);
       const it = i >= 0 ? q.items.splice(i, 1)[0] : q.now && q.now.t === n.t ? q.now : null;
+      if (i >= 0 && it.who) { // it's on the tree: it counts for its guest for 30 minutes
+        q.played = q.played || {};
+        q.played[it.who] = (q.played[it.who] || []).filter((x) => now - x < FRESH_MS).concat(now);
+      }
       if (it) q.now = { t: it.t, name: it.name, msg: it.msg, colors: it.colors, ends: now + Math.max(0, +n.left || 0) * 1000 };
     } else q.now = null;
     return { items: q.items.map(({ t, id, name, colors, msg, at }) => ({ t, id, name, colors, msg, at })) };
