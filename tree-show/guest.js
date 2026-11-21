@@ -151,10 +151,12 @@ function create(ctx) {
     sync, serveLocal,
     clear() { clearAsk = true; items = []; sync(true); },
     skip() { if (cur) { cur.ends = 0; tick(); } },
+    remove(t) { t = String(t); items = items.filter((x) => x.t !== t); played.add(t); drop.push(t); sync(true); }, // the owner takes one out of the line
     status() {
       const c = ctx.cfg(), st = state();
       return { enabled: c.enabled, paused: c.paused, open: st.open, reason: st.reason, site: c.url || null, waiting: items.length,
         now: cur ? { name: cur.name, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null,
+        items: items.map((it) => { const d = ctx.getDesign(it.id); return { t: it.t, name: d ? d.name : it.name || it.id, msg: it.msg || '', colors: it.colors || [], age: Math.round((Date.now() - (it.at || Date.now())) / 1000) }; }),
         lastContact: lastOk ? Math.round((Date.now() - lastOk) / 1000) : null, error: lastErr };
     },
   };

@@ -901,6 +901,7 @@ const server = http.createServer(async (req, res) => {
         log(`Guest requests ${b.action === 'pause' ? 'paused' : 'resumed'}`);
       } else if (b.action === 'clear') { guest.clear(); log('Guest queue cleared'); }
       else if (b.action === 'skip') guest.skip();
+      else if (b.action === 'remove' && b.t) { guest.remove(b.t); log('Guest request removed from the line'); }
       else return send(res, 400, { error: 'Unknown action.' });
       return send(res, 200, guest.status());
     }

@@ -29,11 +29,18 @@ main{max-width:560px;margin:0 auto;padding:0 12px}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);flex:none;animation:pulse 1.6s infinite}
 .closed .dot{background:#c77;box-shadow:none;animation:none}
 @keyframes pulse{50%{opacity:.35}}
-.lineBtn{font:inherit;font-size:13px;color:var(--ink);background:#1b3526;border:1px solid var(--line);border-radius:999px;padding:5px 10px;flex:none}
-.q{list-style:none;margin:8px 0 0;padding:0;max-height:150px;overflow:auto}
-.q li{display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px}
-.q .n{width:22px;height:22px;border-radius:50%;background:#1e3a29;display:grid;place-items:center;font-size:12px;flex:none;color:var(--dim)}
-.q .mine{color:var(--gold)}.q .mine .n{background:var(--gold);color:#222}
+/* the line: one summary row ("Up next · 4  Starburst, Candy cane…"), tap to see everyone */
+.next{display:flex;align-items:center;gap:6px;width:100%;margin-top:7px;padding:5px 8px;font:inherit;font-size:13px;color:var(--dim);background:#0d1c14;border:1px solid var(--line);border-radius:8px;text-align:left}
+.next #nextTxt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.next b{color:var(--ink)}.next .me{color:var(--gold)}
+.next .arr{flex:none;transition:transform .2s}.next[aria-expanded=true] .arr{transform:rotate(180deg)}
+.q{list-style:none;margin:0;padding:6px 10px;position:absolute;left:-1px;right:-1px;top:calc(100% - 6px);z-index:20;max-height:min(55vh,360px);overflow:auto;background:#0f2418;border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;box-shadow:0 14px 30px #000c}
+#nowCard{position:relative}
+.q li{display:flex;gap:6px;align-items:center;padding:5px 2px;font-size:13px;border-top:1px solid #1c3326}
+.q li:first-child{border-top:0}
+.q .n{width:18px;color:var(--dim);text-align:right;flex:none;font-variant-numeric:tabular-nums}
+.q .w{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q .mine{color:var(--gold)}.q .mine .n{color:var(--gold);font-weight:700}
 .q small{color:var(--dim)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:2px;vertical-align:-1px;border:1px solid #0006}
 .x{background:none;border:0;color:var(--dim);font:inherit;font-size:13px;text-decoration:underline;margin-left:auto}
@@ -70,6 +77,9 @@ canvas{width:108px;height:144px;display:block;border-radius:9px;background:#0508
 .go button{width:100%;font:inherit;font-size:17px;font-weight:700;padding:13px;border:0;border-radius:13px;background:var(--red);color:#fff;box-shadow:0 6px 20px #0008}
 .go button:disabled{background:#4b3a38;color:#c9b4b0}
 /* typing a message: the button stops floating (it would sit on top of the keyboard and the box), the box scrolls into view */
+body.tight .scene{height:56px}body.tight .scene h1{font-size:19px;bottom:8px}
+body.tight canvas{width:90px;height:120px}body.tight .make{grid-template-columns:90px minmax(0,1fr)}
+body.tight .hint{display:none}
 body.typing{padding-bottom:0}
 body.typing .go{position:static;background:none;padding-top:10px}
 /* ---- the scene: a tree in a Santa hat, and Santa flying by (original cartoon) ---- */
@@ -138,8 +148,9 @@ body.typing .go{position:static;background:none;padding-top:10px}
 </div>
 <main>
 <div class="card" id="nowCard">
- <div class="now"><span class="dot"></span><div class="txt" id="nowTxt">Checking…</div><button type="button" class="lineBtn hide" id="lineBtn" aria-expanded="false">0 waiting ▾</button></div>
- <ul class="q hide" id="q"></ul>
+ <div class="now"><span class="dot"></span><div class="txt" id="nowTxt">Checking…</div></div>
+ <button type="button" class="next hide" id="lineBtn" aria-expanded="false"><span id="nextTxt"></span><span class="arr">▾</span></button>
+ <ol class="q hide" id="q"></ol>
 </div>
 
 <div class="card">
@@ -193,7 +204,7 @@ function drawQueue(q) {
   var mine = [];
   $('q').innerHTML = q.items.map(function (it, i) {
     if (it.mine) mine.push(i);
-    return '<li class="' + (it.mine ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><span><b>' + esc(it.name) + '</b>' + swatches(it.colors) + (it.msg ? ' <small>“' + showMsg(it.msg) + '”</small>' : '') + '</span>' + (it.mine ? '<button class="x" type="button" data-cancel="' + esc(it.t) + '">Cancel</button>' : '') + '</li>';
+    return '<li class="' + (it.mine ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><span class="w">' + (it.mine ? '★ ' : '') + esc(it.name) + swatches(it.colors) + (it.msg ? ' <small>“' + showMsg(it.msg) + '”</small>' : '') + '</span>' + (it.mine ? '<button class="x" type="button" data-cancel="' + esc(it.t) + '">Cancel</button>' : '') + '</li>';
   }).join('');
   $('q').querySelectorAll('[data-cancel]').forEach(function (c) { c.onclick = function () { cancel(c.dataset.cancel); }; });
   // forget tickets that have played (or were cleared)
@@ -202,9 +213,13 @@ function drawQueue(q) {
   var keep = tickets.filter(function (t) { return live.indexOf(t) >= 0 || playing; });
   if (keep.length !== tickets.length) { tickets = keep; saveTickets(); }
   myCount = mine.length;
+  // one line: how many, yours, and the next few names
+  var names = q.items.slice(0, 3).map(function (it) { return esc(it.name); }).join(', ') + (q.items.length > 3 ? '…' : '');
+  $('nextTxt').innerHTML = '<b>Up next · ' + q.items.length + '</b>' + (mine.length ? ' <span class="me">(' + mine.length + ' yours)</span>' : '') + ' ' + names;
+  if (!q.items.length) lineOpen = false;
   $('lineBtn').classList.toggle('hide', !q.items.length);
-  $('lineBtn').textContent = q.items.length + ' waiting ' + (lineOpen ? '▴' : '▾');
-  $('q').classList.toggle('hide', !q.items.length || !(lineOpen || mine.length));
+  $('lineBtn').setAttribute('aria-expanded', String(lineOpen));
+  $('q').classList.toggle('hide', !lineOpen);
   if (q.now && q.now.mine) say('That’s yours on the tree now! 🎄' + (mine.length ? ' · ' + mine.length + ' more in line' : ''), true);
   else if (mine.length) {
     var wait = (q.now ? q.now.left : 0) + mine[0] * (q.sec || 45);
@@ -212,7 +227,8 @@ function drawQueue(q) {
   } else if ($('err').className === 'ok') say('');
   setGo();
 }
-$('lineBtn').onclick = function () { lineOpen = !lineOpen; this.setAttribute('aria-expanded', String(lineOpen)); if (lastQ) drawQueue(lastQ); };
+$('lineBtn').onclick = function (e) { e.stopPropagation(); lineOpen = !lineOpen; if (lastQ) drawQueue(lastQ); };
+document.addEventListener('click', function (e) { if (lineOpen && !$('q').contains(e.target)) { lineOpen = false; if (lastQ) drawQueue(lastQ); } });
 var myCount = 0;
 function poll() { fetch('api/queue' + (tickets.length ? '?t=' + encodeURIComponent(tickets.join(',')) : ''), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(drawQueue).catch(function () {}); }
 function cancel(t) {
@@ -288,10 +304,20 @@ $('msg').oninput = function () {
   say(ALLOWED.test(v) ? '' : 'The tree can show letters, numbers and simple punctuation.');
   restartPreview(); setGo();
 };
+// One phone screen, always: fewer rows of designs on shorter phones (4 on most, down to 2).
+var ROWS = 4;
+function fit() {
+  if (document.body.classList.contains('typing')) return;     // the keyboard is up: scrolling to the box is fine
+  var g = $('designs'), fits = function () { return document.documentElement.scrollHeight <= window.innerHeight + 1; };
+  var tries = function () { for (ROWS = 4; ROWS >= 2; ROWS--) { g.style.gridTemplateRows = 'repeat(' + ROWS + ',auto)'; if (fits()) return true; } return false; };
+  document.body.classList.remove('tight');
+  if (!tries()) { document.body.classList.add('tight'); tries(); } // small phones: smaller banner and preview too
+}
+window.addEventListener('resize', function () { clearTimeout(fit.t); fit.t = setTimeout(fit, 120); });
 // The phone's keyboard: keep the message box in sight above it.
 function boxInView() { $('msg').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
 $('msg').addEventListener('focus', function () { document.body.classList.add('typing'); setTimeout(boxInView, 350); });
-$('msg').addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== $('msg')) document.body.classList.remove('typing'); }, 150); });
+$('msg').addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== $('msg')) { document.body.classList.remove('typing'); fit(); } }, 150); });
 if (window.visualViewport) visualViewport.addEventListener('resize', function () { if (document.activeElement === $('msg')) boxInView(); });
 $('heart').onclick = function () { var m = $('msg'); if (m.value.length < 24) { m.value += '♥'; m.oninput(); } };
 $('heart').addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep the keyboard up
@@ -355,6 +381,7 @@ api('catalog').then(function (c) {
     E = window.TreeEngine; G = window.GuestLook; frame = new Float32Array(E.N * 3);
     buildLists();
     var first = (groups[order[0]] || [])[0]; if (first) pick(first.id);
+    fit();
     requestAnimationFrame(tick);
   });
 }).catch(function () { say('Couldn’t load the designs. Pull down to try again.'); });
