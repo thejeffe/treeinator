@@ -567,8 +567,10 @@ function scheduleStatus() {
   const w = scheduleWant(new Date());
   const ue = w.entry ? resolveSpec(w.entry.end, new Date()) : null;
   // following = the tree is doing what the schedule wants (otherwise someone pressed Play/Stop/Hold: a manual override)
-  const holding = !!(player.cur && player.cur.hold), running = !!db.playlist.running;
-  const fol = (w.kind === 'off' ? !running : w.kind === 'design' ? running && holding && player.cur.d.id === w.id : running && !holding && db.playlist.id === (w.id || db.activeId));
+  // a guest's request (guest:<ticket>) plays between the playlist's designs: not an override
+  const guestOn = !!(player.cur && String(player.cur.d.id).startsWith('guest:'));
+  const holding = !!(player.cur && player.cur.hold) && !guestOn, running = !!db.playlist.running;
+  const fol = (w.kind === 'off' ? !running : w.kind === 'design' ? running && (guestOn || (holding && player.cur.d.id === w.id)) : running && !holding && db.playlist.id === (w.id || db.activeId));
   const following = fol && !brightOv, brightOnly = fol && brightOv; // brightOnly: playing what the schedule wants, but the brightness was set by hand
   const nx = scheduleNext(sc);
   return { enabled: true, want: w.kind, following, brightOnly, bright: w.entry && w.entry.bright ? w.entry.bright : null, until: ue == null ? null : hhmm(ue), untilInfo: nx.until, next: nx.next,
