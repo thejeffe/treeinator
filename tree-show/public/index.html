@@ -11,7 +11,15 @@
 :root[data-theme="dark"]{--bg:#0D141B;--panel:#131D27;--ink:#DCE5EE;--muted:#90A2B4;--rule:#2A3949;--accent:#F2B33D;--on-accent:#1B1305;--deckA:#6FA3EE;--deckB:#F06A80;--stage:#05080C;--err:#F08585;--ok:#6FCF97;--row:#18232F;color-scheme:dark}
 [hidden]{display:none!important}
 html,body{height:100%}
-body{background:var(--bg);color:var(--ink);font:14px/1.4 var(--body);overflow:hidden}
+body{background:var(--bg);color:var(--ink);font:14px/1.4 var(--body);overflow:hidden;margin:0;display:flex;flex-direction:column}
+.banner{position:relative;flex:none;height:calc(58px + env(safe-area-inset-top,0px));overflow:hidden;background:linear-gradient(180deg,#05070c,#0d1a2e);border-bottom:1px solid #1d2a3c}
+.banner canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.banner .bn{position:absolute;left:0;right:0;bottom:0;height:50px;background:radial-gradient(ellipse 260px 26px at 50% 55%,#05070ce6,#05070c00);display:flex;align-items:center;justify-content:center;gap:12px;padding:0 12px;pointer-events:none}
+.banner h1{margin:0;font:600 30px/1 var(--display);letter-spacing:.03em;white-space:nowrap;background:linear-gradient(90deg,#ff3b3b,#ffd23f,#2fbf5f,#3bb3ff,#c36bff,#ff3b3b);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:tglide 8s linear infinite;filter:drop-shadow(0 0 6px #ffd23f44)}
+.banner span{color:#c3d0de;font-size:13px;text-shadow:0 0 4px #000,0 0 8px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes tglide{to{background-position:300% 0}}
+@media (max-width:719px){.banner span{display:none}.banner h1{font-size:24px}}
+@media (prefers-reduced-motion:reduce){.banner h1{animation:none}}
 /* DJ booth: Sir Mix-a-Lot mode (the mixer view) is always dark, with glowing deck colors */
 body.booth{--bg:#06080d;--panel:#0f151e;--ink:#e3eaf3;--muted:#8193a8;--rule:#223040;--row:#141c27;--accent:#F2B33D;--on-accent:#1B1305;--deckA:#4f8ff7;--deckB:#ff4d6a;--stage:#020305;color-scheme:dark;
  background:radial-gradient(ellipse at 50% -20%,#1a2233 0%,#06080d 60%)}
@@ -45,7 +53,7 @@ body.booth .mode{background:#0f151e}
 .stage .tag{position:absolute;top:10px;left:50%;transform:translateX(-50%);white-space:nowrap;font:700 11px var(--mono);letter-spacing:.14em;padding:3px 10px;border-radius:4px;color:#8796a8;border:1px solid #2a3646;background:rgba(0,0,0,.4)}
 .stage.live .tag{color:#fff;background:#e0233a;border-color:#e0233a;box-shadow:0 0 14px #e0233a}
 .app:not([data-view="mix"]) .stage .tag{display:none}
-.app{height:100%;box-sizing:border-box;padding-block:8px;padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));display:grid;gap:8px;grid-template-columns:minmax(0,40fr) minmax(0,60fr);grid-template-rows:minmax(0,1fr);grid-template-areas:"stage ctrl"}
+.app{flex:1;min-height:0;height:auto;box-sizing:border-box;padding-block:8px;padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));display:grid;gap:8px;grid-template-columns:minmax(0,40fr) minmax(0,60fr);grid-template-rows:minmax(0,1fr);grid-template-areas:"stage ctrl"}
 .stage{grid-area:stage;background:var(--stage);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0;min-width:0;overflow:hidden;position:relative}
 .stage canvas{display:block}
 .stagebar{display:flex;gap:6px;align-items:center;margin-top:6px;min-height:14px}
@@ -286,7 +294,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
  .app[data-view="mix"] .ctrl{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}
 }
 @media (min-width:900px) and (min-height:520px){
- .app{grid-template-columns:minmax(0,1fr) minmax(260px,1.05fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"title mode view" "deckA stage deckB" "mix mix mix";gap:10px;padding-block:12px}
+ .app{grid-template-columns:minmax(0,1fr) minmax(260px,1.05fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"mode mode view" "deckA stage deckB" "mix mix mix";gap:10px;padding-block:12px}
  .title{display:flex;grid-area:title;align-items:baseline;gap:12px;min-width:0}
  #modeBadge{grid-area:mode;align-self:center;justify-self:stretch}
  .title span{display:none}
@@ -306,8 +314,8 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
  .sh-player{grid-area:mix;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.3fr);align-items:center;gap:12px}
 }
 </style>
+<header class="banner" id="banner"><canvas id="bannerCv" aria-hidden="true"></canvas><div class="bn"><h1>Treeinator</h1><span id="subtitle">Build playlists, edit designs and run the tree.</span></div></header>
 <div class="app" id="app" data-view="shows" data-sub="pl">
- <div class="title"><h1>Treeinator</h1><span id="subtitle">Build playlists, edit designs and run the tree.</span></div>
  <div class="stage"><span class="tag" id="stageTag">TREE · NOW</span><canvas id="view" aria-label="Tree preview"></canvas>
   <div class="xf xfover mx" id="xfOver"><b class="a">A</b><input type="range" id="xf" min="0" max="100" step="1" value="0" aria-label="Crossfader"><b class="b">B</b><button id="swapBtn" type="button" title="Glide the crossfader to the other deck (about a second)">⇄ Swap</button></div>
   <div class="stagebar"><div class="beat" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span class="src" id="src">Mixer</span><button type="button" id="liveBtn" hidden>Back to live tree</button></div>
@@ -1242,5 +1250,54 @@ document.body.classList.toggle('booth',app.dataset.view==='mix');
 Store.init().then(function(){local.setPlaylist(Store.playlist);syncOpts();renderLists();renderNow();fillPlSel();
  if(!Store.server)$('subtitle').textContent='Designs and playlists save in this browser. Open from tree-show to play them on the tree.';
  setInterval(loop,33)});
+})();
+</script>
+<script>
+/* the banner: a string of party bulbs chasing across the top, snow drifting down, little light-cone trees twinkling, and now and then Santa flies by */
+(function () {
+  var cv = document.getElementById('bannerCv'); if (!cv) return;
+  var x = cv.getContext('2d'), still = matchMedia('(prefers-reduced-motion: reduce)').matches, W = 0, H = 0, flakes = [], trees = [], last = 0;
+  var COL = ['#ff3b3b', '#ff9f1a', '#ffd23f', '#2fbf5f', '#3bb3ff', '#c36bff', '#ff5fa2'];
+  function size() {
+    var r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height; cv.width = W * d; cv.height = H * d; x.setTransform(d, 0, 0, d, 0, 0);
+    flakes = []; for (var i = 0; i < W / 9; i++) flakes.push({ x: Math.random() * W, y: Math.random() * H, s: 0.6 + Math.random() * 1.4, v: 6 + Math.random() * 14 });
+    trees = []; for (var t = 30; t < W; t += 70 + Math.random() * 60) trees.push({ x: t, h: 16 + Math.random() * 14, p: Math.random() * 6 });
+  }
+  function frame(now) {
+    var t = now / 1000, dt = last ? Math.min(0.1, t - last) : 0; last = t;
+    x.clearRect(0, 0, W, H);
+    // stars
+    x.fillStyle = '#fff'; for (var i = 0; i < W / 25; i++) { x.globalAlpha = 0.15 + 0.35 * Math.abs(Math.sin(t * 0.8 + i * 1.7)); x.fillRect((i * 97.3) % W, (i * 31.7) % (H * 0.6), 1.2, 1.2); } x.globalAlpha = 1;
+    // little trees along the bottom, lights twinkling
+    trees.forEach(function (tr) {
+      for (var r = 0; r < 5; r++) for (var k = 0; k <= r; k++) {
+        var px = tr.x + (k - r / 2) * (tr.h / 6), py = H - 4 - tr.h + 4 + r * (tr.h / 5.5);
+        x.globalAlpha = 0.35 + 0.4 * Math.abs(Math.sin(t * 2 + tr.p + r + k)); x.fillStyle = COL[(r + k + Math.floor(t * 2 + tr.p)) % 7]; x.fillRect(px - 1, py - 1, 2, 2);
+      }
+      x.globalAlpha = 0.6; x.fillStyle = '#ffd23f'; x.fillRect(tr.x - 1, H - 4 - tr.h, 2, 2);
+    }); x.globalAlpha = 1;
+    // the bulb string: swags across the whole width, colours chasing
+    var sw = Math.max(120, W / Math.max(3, Math.round(W / 220))), top = H - 58 + 2, n = 0;
+    x.strokeStyle = '#1e2a20'; x.lineWidth = 1.5; x.beginPath();
+    for (var sx = 0; sx <= W; sx += 4) { var u = (sx % sw) / sw; x.lineTo(sx, top + Math.sin(u * Math.PI) * 9); } x.stroke();
+    for (var bx = 10; bx < W; bx += 22, n++) {
+      var u2 = (bx % sw) / sw, by = top + Math.sin(u2 * Math.PI) * 9 + 4, c = COL[((n - Math.floor(t * (still ? 0 : 5))) % 7 + 7) % 7];
+      x.fillStyle = '#556'; x.fillRect(bx - 1.5, by - 4, 3, 3);
+      x.shadowColor = c; x.shadowBlur = 8; x.fillStyle = c; x.beginPath(); x.ellipse(bx, by + 2, 2.6, 3.6, 0, 0, 7); x.fill(); x.shadowBlur = 0;
+    }
+    // snow
+    x.fillStyle = '#fff'; flakes.forEach(function (f) { if (!still) { f.y += f.v * dt; f.x += Math.sin(t + f.v) * 6 * dt; if (f.y > H) { f.y = -2; f.x = Math.random() * W; } } x.globalAlpha = 0.6; x.beginPath(); x.arc(f.x, f.y, f.s, 0, 7); x.fill(); }); x.globalAlpha = 1;
+    // Santa flies across about every 40 seconds
+    var cyc = (t % 40) / 9; if (!still && cyc < 1) {
+      var sxp = -80 + cyc * (W + 160), syp = H - 58 + 30 + Math.sin(cyc * 12) * 3;
+      x.fillStyle = '#a5651f'; for (var dI = 0; dI < 2; dI++) { x.beginPath(); x.ellipse(sxp + 34 + dI * 16, syp, 6, 3, 0, 0, 7); x.fill(); x.fillRect(sxp + 37 + dI * 16, syp - 7, 1.5, 5); }
+      x.fillStyle = '#e03131'; x.beginPath(); x.arc(sxp + 54, syp - 1, 1.5, 0, 7); x.fill();
+      x.fillStyle = '#c92a2a'; x.fillRect(sxp, syp - 5, 20, 7); x.fillStyle = '#e03131'; x.beginPath(); x.arc(sxp + 10, syp - 8, 4, 0, 7); x.fill();
+      x.strokeStyle = '#f2c14e'; x.lineWidth = 1.2; x.beginPath(); x.moveTo(sxp - 2, syp + 4); x.lineTo(sxp + 24, syp + 4); x.stroke();
+      for (var g = 0; g < 6; g++) { x.globalAlpha = 0.7 - g * 0.11; x.fillStyle = COL[g % 7]; x.fillRect(sxp - 8 - g * 7, syp + 1 + Math.sin(t * 9 + g), 2, 2); } x.globalAlpha = 1;
+    }
+    if (!still) requestAnimationFrame(frame);
+  }
+  size(); addEventListener('resize', size); requestAnimationFrame(frame);
 })();
 </script>

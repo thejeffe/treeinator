@@ -91,7 +91,7 @@ const BUILD = (() => { const h = require('crypto').createHash('sha1');
   return h.digest('hex').slice(0, 10); })();
 // Home-screen app: manifest + Apple tags so "Add to Home Screen" on an iPad/iPhone opens tree-show full screen with its icon.
 const PAGE_HEAD = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#0A0E15">'
-  + '<title>Treeinator</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="icon-180.png">'
+  + '<title>Treeinator</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">'
   + '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Treeinator"><meta name="apple-mobile-web-app-status-bar-style" content="black">'
   + '<style>body{margin:0}</style></head><body>';
 const DATA_FILE = path.join(CFG.dataDir, 'shows.json');
