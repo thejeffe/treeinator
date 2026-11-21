@@ -16,8 +16,8 @@ import { checkMessage } from './words.mjs';
 //  - quiet (the whole line is shorter than that): anyone may line up to `cap` of their own
 //  - busy (the line is that long or longer): a fair share each, cap / (guests waiting, counting a newcomer), at least 1,
 //    so a newcomer always gets a turn and nobody fills the line
-// Only scripts are stopped otherwise: QUEUE_MAX in the whole line, one request per FLOOD_MS per phone.
-const QUEUE_MAX = 60, FLOOD_MS = 2000;
+// Only scripts are stopped otherwise: QUEUE_MAX in the whole line, FLOOD_N requests per FLOOD_MS per phone.
+const QUEUE_MAX = 60, FLOOD_N = 5, FLOOD_MS = 10000; // scripts only: more than 5 requests in 10 s from one phone
 const FRESH_MS = 30 * 60 * 1000; // a guest's plays count against their place in line for 30 minutes
 // How many of each guest's requests have played in the last 30 minutes (q.played: who -> [times]).
 function playedRecently(q, now) {
@@ -179,7 +179,7 @@ export async function handler(ev) {
         delete j.name; delete j.dist; r.body = JSON.stringify(j);
         return r;
       } catch (e) {
-        if (e.status && e.status < 500) await logEvents([Object.assign(base, { k: 'refused', id: clip(body.id, 40), why: e.why || null, reason: clip(e.message, 160), msg: clip(body.msg, 30) })]).catch(() => {});
+        if (e.status && e.status < 500 && e.why !== 'flood') await logEvents([Object.assign(base, { k: 'refused', id: clip(body.id, 40), why: e.why || null, reason: clip(e.message, 160), msg: clip(body.msg, 30) })]).catch(() => {});
         throw e;
       }
     }
@@ -231,8 +231,8 @@ async function request(ev, b, now) {
       const d = meters(la, lo, q.geo.lat, q.geo.lon); dist = d;
       if (d - acc > q.geo.radius) throw httpError(403, `You need to be near the tree to light it up. You’re about ${far(d)} away. Come by and try again!`, 'far');
     }
-    for (const k in q.rate) { const v = Array.isArray(q.rate[k]) ? q.rate[k][q.rate[k].length - 1] : q.rate[k]; if (now - v > FLOOD_MS) delete q.rate[k]; else q.rate[k] = v; }
-    if (q.rate[who]) throw httpError(429, 'One moment… try again in a second or two.');
+    for (const k in q.rate) { const v = (Array.isArray(q.rate[k]) ? q.rate[k] : [q.rate[k]]).filter((x) => now - x < FLOOD_MS); if (v.length) q.rate[k] = v; else delete q.rate[k]; }
+    if ((q.rate[who] || []).length >= FLOOD_N) throw httpError(429, 'Whoa, that’s fast! Try again in a few seconds.', 'flood');
     const S = share(q, who), mine = q.items.filter((x) => x.who === who).length;
     if (mine >= S.max) throw httpError(429, S.busy
       ? `The line is busy, so everyone gets a turn: you have ${mine} waiting. You can add another when one of yours has played.`
@@ -248,7 +248,7 @@ async function request(ev, b, now) {
       if (r > round) { at = i; break; }
     }
     q.items.splice(at, 0, { t, who, id: d.id, name: d.name, colors, msg: m.text, at: now });
-    q.rate[who] = now;
+    q.rate[who] = (q.rate[who] || []).concat(now);
     return { pos: at + 1 };
   }, EMPTY);
   return reply(200, { ok: true, t, pos: out.pos, msg: m.text, name: d.name, dist: dist == null ? undefined : Math.round(dist / 10) * 10 });

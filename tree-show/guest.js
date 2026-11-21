@@ -93,7 +93,7 @@ function create(ctx) {
         vs.sent.push({ at: e.at, name: e.name, msg: e.msg || '', colors: e.colors || [], played: pl ? pl.at : null,
           outcome: end ? end.k : pl ? 'played' : 'waiting' });
       }
-      if (e.k === 'refused') vs.refused.push({ at: e.at, reason: e.reason, why: e.why });
+      if (e.k === 'refused' && e.why !== 'flood' && !/^One moment/.test(e.reason || '')) vs.refused.push({ at: e.at, reason: e.reason, why: e.why }); // (quick taps aren't turn-aways)
     }
     return visits.reverse().slice(0, 300);
   }

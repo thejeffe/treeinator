@@ -895,12 +895,14 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/version') return send(res, 200, { build: BUILD });
     if (p === '/api/guest' && req.method === 'GET') return send(res, 200, guest.status());
     // The QR code (SVG) and the printable sign (PDF). The link: ?link=, else the QR link setting, the guest site, or this sample.
-    if ((p === '/api/guest/qr.svg' || p === '/api/guest/sign.pdf') && req.method === 'GET') {
+    if ((p === '/api/guest/qr.svg' || p === '/api/guest/sign.pdf' || p === '/api/guest/sign.svg') && req.method === 'GET') {
       const gc = GQ.clean({}, settings.guest), host = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost').split(',')[0].trim();
       const link = String(url.searchParams.get('link') || gc.qrLink || gc.url || `https://${host}/external/`).trim().slice(0, 200);
       if (!/^https?:\/\/\S+$/i.test(link)) return send(res, 400, { error: 'The link should start with https://' });
-      const dl = url.searchParams.get('download') ? { 'Content-Disposition': `attachment; filename="${p.endsWith('.pdf') ? 'tree-sign.pdf' : 'tree-qr.svg'}"` } : {};
-      if (p.endsWith('.svg')) return send(res, 200, SIGN.qrSvg(link), 'image/svg+xml', Object.assign({ 'Cache-Control': 'no-store' }, dl));
+      const file = p.endsWith('sign.pdf') ? 'tree-sign.pdf' : p.endsWith('sign.svg') ? 'tree-sign-3d-print.svg' : 'tree-qr.svg';
+      const dl = url.searchParams.get('download') ? { 'Content-Disposition': `attachment; filename="${file}"` } : {};
+      if (p.endsWith('qr.svg')) return send(res, 200, SIGN.qrSvg(link), 'image/svg+xml', Object.assign({ 'Cache-Control': 'no-store' }, dl));
+      if (p.endsWith('sign.svg')) return send(res, 200, SIGN.signSvg(link), 'image/svg+xml', Object.assign({ 'Cache-Control': 'no-store' }, dl));
       return send(res, 200, SIGN.signPdf(link, gc.title), 'application/pdf', Object.assign({ 'Cache-Control': 'no-store' }, dl));
     }
     // Activity: visits summarised (Settings -> Guests -> Activity), or the raw log to download
