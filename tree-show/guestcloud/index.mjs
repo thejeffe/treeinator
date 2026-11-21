@@ -18,13 +18,6 @@ import { checkMessage } from './words.mjs';
 //    so a newcomer always gets a turn and nobody fills the line
 // Only scripts are stopped otherwise: QUEUE_MAX in the whole line, FLOOD_N requests per FLOOD_MS per phone.
 const QUEUE_MAX = 60, FLOOD_N = 5, FLOOD_MS = 10000; // scripts only: more than 5 requests in 10 s from one phone
-const FRESH_MS = 30 * 60 * 1000; // a guest's plays count against their place in line for 30 minutes
-// How many of each guest's requests have played in the last 30 minutes (q.played: who -> [times]).
-function playedRecently(q, now) {
-  const out = {};
-  for (const k in q.played || {}) { const v = q.played[k].filter((x) => now - x < FRESH_MS); if (v.length) out[k] = v.length; }
-  return out;
-}
 function share(q, who) {
   const lineMin = Math.max(1, Math.min(60, +((q.limits || {}).lineMin) || 10));
   const cap = Math.max(1, Math.floor(lineMin * 60 / (q.sec || 45)));
@@ -238,16 +231,17 @@ async function request(ev, b, now) {
       ? `The line is busy, so everyone gets a turn: you have ${mine} waiting. You can add another when one of yours has played.`
       : `You have ${S.lineMin} minutes of the tree lined up already. You can add another when one of yours has played.`);
     if (q.items.length >= QUEUE_MAX) throw httpError(429, 'The queue is full right now. Try again in a few minutes.');
-    // Round-robin by guest: everyone's 1st request plays before anyone's 2nd, and so on, counting what each guest has
-    // had played in the last 30 minutes too. A newcomer lands after the other guests' first picks, ahead of the extra
-    // ones of someone who filled the line; 30 minutes after their last play, a guest counts as new again.
-    const pr = playedRecently(q, now), round = (pr[who] || 0) + mine, seen = {};
+    // Fair turns (start-time fair queuing): each request gets a slot, the time it would start if its phone had the
+    // tree to itself: now, or one play after that phone's previous request, whichever is later. The line is in slot
+    // order. So busy phones take turns (A, B, A, B...), a newcomer goes in at "now" (ahead of the extra requests a busy
+    // phone lined up), and nothing played earlier counts against anyone: no phone waits more than about one turn per
+    // other phone that's using the tree.
+    const step = (q.sec || 45) * 1000, slot = Math.max(now, ((q.slot || {})[who] || 0) + step);
     let at = q.items.length;
-    for (let i = 0; i < q.items.length; i++) {
-      const w = q.items[i].who, r = (pr[w] || 0) + (seen[w] = (seen[w] || 0) + 1) - 1; // that guest's round for this item
-      if (r > round) { at = i; break; }
-    }
-    q.items.splice(at, 0, { t, who, id: d.id, name: d.name, colors, msg: m.text, at: now });
+    for (let i = 0; i < q.items.length; i++) if ((q.items[i].slot || q.items[i].at) > slot) { at = i; break; }
+    q.items.splice(at, 0, { t, who, id: d.id, name: d.name, colors, msg: m.text, at: now, slot });
+    q.slot = q.slot || {}; q.slot[who] = slot;
+    for (const k in q.slot) if (q.slot[k] < now - 3600000) delete q.slot[k];
     q.rate[who] = (q.rate[who] || []).concat(now);
     return { pos: at + 1 };
   }, EMPTY);
@@ -267,8 +261,8 @@ export async function treeSync(b, now) {
     for (let i = 0; i < 5; i++) { const cur = await store.get('catalog'); if (await store.put('catalog', data, cur ? cur.v : 0)) break; }
   }
   const out = await update('queue', (q) => {
-    if (b.clear) q.items = [];                                     // the owner cleared the queue
-    for (const k in q.played || {}) { q.played[k] = q.played[k].filter((x) => now - x < FRESH_MS); if (!q.played[k].length) delete q.played[k]; }
+    if (b.clear) { q.items = []; q.slot = {}; }                    // the owner cleared the queue
+    delete q.played;                                               // (older versions counted plays for 30 minutes)
     if (Array.isArray(b.drop)) q.items = q.items.filter((x) => !b.drop.includes(x.t)); // requests the tree can't play
     q.open = !!b.open; q.seen = now; q.sec = sec;
     q.geo = b.geo && isFinite(+b.geo.lat) && isFinite(+b.geo.lon) ? { lat: +b.geo.lat, lon: +b.geo.lon, radius: Math.max(30, Math.min(5000, +b.geo.radius || 200)) } : null;
@@ -278,10 +272,6 @@ export async function treeSync(b, now) {
     if (n) {
       const i = q.items.findIndex((x) => x.t === n.t);
       const it = i >= 0 ? q.items.splice(i, 1)[0] : q.now && q.now.t === n.t ? q.now : null;
-      if (i >= 0 && it.who) { // it's on the tree: it counts for its guest for 30 minutes
-        q.played = q.played || {};
-        q.played[it.who] = (q.played[it.who] || []).filter((x) => now - x < FRESH_MS).concat(now);
-      }
       if (it) q.now = { t: it.t, name: it.name, msg: it.msg, colors: it.colors, ends: now + Math.max(0, +n.left || 0) * 1000 };
     } else q.now = null;
     return { items: q.items.map(({ t, id, name, colors, msg, at }) => ({ t, id, name, colors, msg, at })) };
