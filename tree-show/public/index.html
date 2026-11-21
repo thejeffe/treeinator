@@ -96,10 +96,19 @@ input[type=text],input[type=number],input[type=password]{font:400 13px var(--bod
 input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;width:4.2em;text-align:right;padding:4px 5px}
 .val{font:500 11px var(--mono);font-variant-numeric:tabular-nums;min-width:3.2ch;text-align:right;flex:none}
 .seg2{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-#viewSeg{grid-template-columns:1fr 1fr auto auto}
-#reloadBtn{padding:6px 10px;font:600 15px var(--display);position:relative}
-#reloadBtn.upd{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
-#setBtn{padding:6px 10px;font:600 15px var(--display);letter-spacing:.03em}
+#viewSeg{grid-template-columns:1fr 1fr auto}
+/* ☰ menu: Reload and Settings (the other buttons stay as controls) */
+.amenu{position:relative;display:grid}
+.amenu .menubtn{padding:0 10px;display:grid;place-items:center;position:relative;height:100%}
+.amenu svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.amenu .menubtn[aria-expanded="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.amenu .menubtn.upd::after{content:"";position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--panel)}
+.amenu .menupop{position:absolute;right:0;top:calc(100% + 6px);z-index:80;min-width:200px;display:grid;padding:6px;gap:2px;background:var(--panel);border:1px solid var(--rule);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.4)}
+.amenu .menupop[hidden]{display:none}
+.amenu .menupop button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;background:none;padding:10px 12px;border-radius:8px;font:500 15px var(--body);letter-spacing:normal;color:var(--ink);white-space:nowrap;overflow:visible}
+.amenu .menupop button:hover:not(:disabled),.amenu .menupop button:focus-visible{background:var(--row)}
+.amenu .menupop button svg{color:var(--accent);flex:none}
+.amenu .menupop #reloadBtn.upd span::after{content:" · update ready";color:var(--accent);font-weight:600}
 #setDlg{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:0;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px)}
 #setDlg::backdrop{background:rgba(0,0,0,.5)}
 #setDlg form{display:grid;gap:12px;padding:16px}
@@ -322,7 +331,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
  </div>
  <div class="ctrl">
   <button type="button" id="modeBadge" class="mode manual" title="Open the schedule"><b id="modeName">MANUAL</b><span id="modeInfo">No schedule · plays only when you press Play</span><span id="modeAct" aria-label="Resume schedule">↺<span class="lg"> Resume</span></span></button>
-  <div class="seg2" id="viewSeg" role="group" aria-label="View"><button aria-pressed="true" data-v="shows">Shows</button><button aria-pressed="false" data-v="mix">Sir Mix-a-Lot</button><button type="button" id="reloadBtn" title="Reload the app with the latest version" aria-label="Reload app">↻</button><button type="button" id="setBtn" title="Settings" aria-label="Settings">⚙</button></div>
+  <div class="seg2" id="viewSeg" role="group" aria-label="View"><button aria-pressed="true" data-v="shows">Shows</button><button aria-pressed="false" data-v="mix">Sir Mix-a-Lot</button><div class="amenu"><button type="button" id="menuBtn" class="menubtn" aria-haspopup="menu" aria-expanded="false" aria-label="Menu" title="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><div class="menupop" id="menuPop" role="menu" hidden><button type="button" role="menuitem" id="reloadBtn" title="Reload the app with the latest version"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg><span id="reloadLbl">Reload</span></button><button type="button" role="menuitem" id="setBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg><span>Settings</span></button></div></div></div>
 
   <!-- MIX -->
   <div class="seg2 mx" id="tabs"><button aria-pressed="true" data-d="0">Deck A</button><button aria-pressed="false" data-d="1">Deck B</button></div>
@@ -695,8 +704,8 @@ var ws=null,wsBackoff=1000,mirror=new Uint8Array(N*3),mirrorAt=0,watching=false;
 /* Reload: fetch the newest build id from tree-show, drop any browser caches, and reload with a fresh URL
    so the home-screen app can't keep showing an old copy. The button turns gold when a newer build is installed. */
 var PAGE_BUILD=document.body.getAttribute('data-build')||'';
-function checkBuild(b){if(!b||!PAGE_BUILD)return;var btn=$('reloadBtn'),nw=b!==PAGE_BUILD;btn.classList.toggle('upd',nw);btn.textContent='↻';btn.title=nw?'A newer version is installed. Tap to load it.':'Reload the app with the latest version'}
-function hardReload(){var btn=$('reloadBtn');btn.disabled=true;btn.textContent='…';
+function checkBuild(b){if(!b||!PAGE_BUILD)return;var btn=$('reloadBtn'),nw=b!==PAGE_BUILD;btn.classList.toggle('upd',nw);btn.title=nw?'A newer version is installed. Tap to load it.':'Reload the app with the latest version'}
+function hardReload(){var btn=$('reloadBtn');btn.disabled=true;$('reloadLbl').textContent='Reloading…';
  var go=function(b){var u=location.pathname+'?v='+encodeURIComponent(b||'')+'&t='+Date.now()+location.hash;location.replace(u)};
  var clear=(window.caches&&caches.keys)?caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}).catch(function(){}):Promise.resolve();
  var unreg=(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations)?navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(r){return r.unregister()}))}).catch(function(){}):Promise.resolve();
@@ -1299,5 +1308,17 @@ Store.init().then(function(){local.setPlaylist(Store.playlist);syncOpts();render
     if (!still) requestAnimationFrame(frame);
   }
   size(); addEventListener('resize', size); requestAnimationFrame(frame);
+})();
+</script>
+<script>
+/* the ☰ menu: open/close; picking an item closes it; the menu button shows a dot when an update is ready */
+(function () {
+  var btn = document.getElementById('menuBtn'), pop = document.getElementById('menuPop'), rl = document.getElementById('reloadBtn'); if (!btn) return;
+  function set(open) { pop.hidden = !open; btn.setAttribute('aria-expanded', open); if (open) { var f = pop.querySelector('button:not(:disabled)'); if (f) f.focus(); } }
+  btn.addEventListener('click', function (e) { e.stopPropagation(); set(pop.hidden); });
+  pop.addEventListener('click', function (e) { if (e.target.closest('button')) setTimeout(function () { set(false); }, 0); });
+  document.addEventListener('click', function (e) { if (!pop.hidden && !e.target.closest('.amenu')) set(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !pop.hidden) { set(false); btn.focus(); } });
+  new MutationObserver(function () { btn.classList.toggle('upd', rl.classList.contains('upd')); btn.title = rl.classList.contains('upd') ? 'Menu: an update is ready' : 'Menu'; }).observe(rl, { attributes: true, attributeFilter: ['class'] });
 })();
 </script>
