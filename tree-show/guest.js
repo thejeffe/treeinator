@@ -73,19 +73,19 @@ function create(ctx) {
     catch (e) { return []; }
   }
   // A phone's name in the activity: three Christmas words picked from its visitor id (the same phone always gets the
-  // same name; 30 x 30 x 30 = 27,000 of them), instead of a string of random letters.
+  // same name; 30 x 30 x 12 = 10,800 of them), instead of a string of random letters.
   const XA = ['Jolly', 'Merry', 'Twinkly', 'Frosty', 'Sparkly', 'Cozy', 'Snowy', 'Glittery', 'Toasty', 'Fuzzy', 'Jingly', 'Starry', 'Sugary', 'Cheery', 'Shimmery',
     'Giggly', 'Snuggly', 'Rosy', 'Golden', 'Silver', 'Bouncy', 'Dashing', 'Wintry', 'Festive', 'Plucky', 'Peppy', 'Dazzling', 'Glowing', 'Nifty', 'Spry'];
   const XB = ['Gingerbread', 'Peppermint', 'Candy Cane', 'Mistletoe', 'Holly', 'Cocoa', 'Eggnog', 'Snowflake', 'Sleigh Bell', 'Sugarplum', 'Tinsel', 'Chestnut',
     'Cranberry', 'Marshmallow', 'Fruitcake', 'Pinecone', 'Icicle', 'Snowball', 'Ornament', 'Stocking', 'Wreath', 'Cinnamon', 'Nutmeg', 'Garland', 'Toffee',
     'Fireside', 'Northpole', 'Velvet', 'Frost', 'Starlight'];
-  const XC = ['Elf', 'Reindeer', 'Snowman', 'Penguin', 'Nutcracker', 'Angel', 'Caroler', 'Polar Bear', 'Yeti', 'Snowy Owl', 'Robin', 'Moose', 'Gnome',
-    'Drummer Boy', 'Skater', 'Sledder', 'Baker', 'Fairy', 'Toy Soldier', 'Teddy Bear', 'Lamb', 'Sprite', 'Shepherd', 'Wise Man', 'Santa', 'Jack Frost',
-    'Cardinal', 'Arctic Fox', 'Bell Ringer', 'Toymaker'];
+  // the last word: the gifts of "The Twelve Days of Christmas"
+  const XC = ['Partridge', 'Turtle Dove', 'French Hen', 'Calling Bird', 'Golden Ring', 'Goose', 'Swan', 'Milkmaid', 'Dancing Lady', 'Leaping Lord',
+    'Piper', 'Drummer'];
   function xmasName(id) {
     let h = 2166136261;                                  // FNV-1a: the same id, the same name
     for (const ch of String(id)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
-    return `${XA[h % 30]} ${XB[Math.floor(h / 30) % 30]} ${XC[Math.floor(h / 900) % 30]}`;
+    return `${XA[h % 30]} ${XB[Math.floor(h / 30) % 30]} ${XC[Math.floor(h / 900) % XC.length]}`;
   }
   // Visits: a visitor's events with no gap over 30 minutes; each request with how it went.
   // Over the whole log (90 days), so a phone is "new" only on its very first visit, and its rank (how active it is,
