@@ -72,15 +72,35 @@ function create(ctx) {
     try { return fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter((e) => e && e.at >= since).sort((a, b) => a.at - b.at); }
     catch (e) { return []; }
   }
+  // A phone's name in the activity: three Christmas words picked from its visitor id (the same phone always gets the
+  // same name; 30 x 30 x 30 = 27,000 of them), instead of a string of random letters.
+  const XA = ['Jolly', 'Merry', 'Twinkly', 'Frosty', 'Sparkly', 'Cozy', 'Snowy', 'Glittery', 'Toasty', 'Fuzzy', 'Jingly', 'Starry', 'Sugary', 'Cheery', 'Shimmery',
+    'Giggly', 'Snuggly', 'Rosy', 'Golden', 'Silver', 'Bouncy', 'Dashing', 'Wintry', 'Festive', 'Plucky', 'Peppy', 'Dazzling', 'Glowing', 'Nifty', 'Spry'];
+  const XB = ['Gingerbread', 'Peppermint', 'Candy Cane', 'Mistletoe', 'Holly', 'Cocoa', 'Eggnog', 'Snowflake', 'Sleigh Bell', 'Sugarplum', 'Tinsel', 'Chestnut',
+    'Cranberry', 'Marshmallow', 'Fruitcake', 'Pinecone', 'Icicle', 'Snowball', 'Ornament', 'Stocking', 'Wreath', 'Cinnamon', 'Nutmeg', 'Garland', 'Toffee',
+    'Fireside', 'Northpole', 'Velvet', 'Frost', 'Starlight'];
+  const XC = ['Elf', 'Reindeer', 'Snowman', 'Penguin', 'Nutcracker', 'Angel', 'Caroler', 'Polar Bear', 'Yeti', 'Owl', 'Fox', 'Bunny', 'Robin', 'Moose', 'Kitten',
+    'Puppy', 'Gnome', 'Drummer', 'Skater', 'Sledder', 'Baker', 'Fairy', 'Toy Soldier', 'Teddy', 'Squirrel', 'Lamb', 'Hedgehog', 'Otter', 'Badger', 'Sprite'];
+  function xmasName(id) {
+    let h = 2166136261;                                  // FNV-1a: the same id, the same name
+    for (const ch of String(id)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+    return `${XA[h % 30]} ${XB[Math.floor(h / 30) % 30]} ${XC[Math.floor(h / 900) % 30]}`;
+  }
   // Visits: a visitor's events with no gap over 30 minutes; each request with how it went.
   function summary(days) {
-    const ev = readLog(days), byT = {}, visits = [], open = {};
+    const ev = readLog(days), byT = {}, visits = [], open = {}, names = {}, taken = {};
+    const nameOf = (id) => {                             // unique in the list: a clash gets the next name along
+      if (names[id]) return names[id];
+      let n = xmasName(id);
+      for (let k = 1; taken[n] && taken[n] !== id; k++) n = xmasName(id + '#' + k);
+      taken[n] = id; return (names[id] = n);
+    };
     for (const e of ev) if (e.t && ['played', 'done', 'cut', 'skipped', 'removed', 'dropped', 'cancelled'].includes(e.k)) (byT[e.t] = byT[e.t] || []).push(e);
     for (const e of ev) {
       if (!e.v && !e.who) continue;
       if (['played', 'done', 'cut', 'skipped', 'removed', 'dropped'].includes(e.k) && !e.v) continue; // the tree's own notes join their request below
       const id = e.v || e.who, cur = open[id];
-      const vs = cur && e.at - cur.last <= 30 * 60000 ? cur : (open[id] = { visitor: String(id).slice(0, 6), dev: e.dev || '', start: e.at, last: e.at, looked: [], cats: [], sent: [], refused: [], geo: null, dist: null });
+      const vs = cur && e.at - cur.last <= 30 * 60000 ? cur : (open[id] = { visitor: nameOf(id), code: String(id).slice(0, 6), dev: e.dev || '', start: e.at, last: e.at, looked: [], cats: [], sent: [], refused: [], geo: null, dist: null });
       if (vs !== cur) visits.push(vs);
       vs.last = e.at; if (e.dev && !vs.dev) vs.dev = e.dev;
       if (e.k === 'pick' && e.name && !vs.looked.includes(e.name)) vs.looked.push(e.name);
