@@ -1,7 +1,7 @@
 <title>Treeinator</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;1,800&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>html{touch-action:manipulation;-webkit-text-size-adjust:100%}</style><script>/* no zooming on phones (iPhone Safari ignores user-scalable=no for pinches, so stop the gesture itself) */['gesturestart','gesturechange'].forEach(function(k){document.addEventListener(k,function(e){e.preventDefault()},{passive:false})});document.addEventListener('touchmove',function(e){if(e.touches.length>1||(e.scale!==undefined&&e.scale!==1))e.preventDefault()},{passive:false});</script>
 <style>
 /* Layout: one-screen console. Phone: tree left, controls right (Mix or Shows view). Wide: Deck A | tree | Deck B over a bottom bar; Shows view puts playlist | tree | designs over the player bar. */
@@ -20,6 +20,10 @@ body{background:var(--bg);color:var(--ink);font:14px/1.4 var(--body);overflow:hi
 @keyframes tglide{to{background-position:300% 0}}
 @media (max-width:719px){.banner span{display:none}.banner h1{font-size:24px}}
 @media (prefers-reduced-motion:reduce){.banner h1{animation:none}}
+.banner .bnicon{flex:none;border-radius:9px}
+.banner h1.bulbs{font:italic 800 34px/1 var(--display);letter-spacing:.04em;text-transform:uppercase;background:none;-webkit-background-clip:initial;background-clip:initial;color:#fff;animation:none;filter:none;display:flex}
+.banner h1.bulbs i{font-style:inherit;transition:color .25s,text-shadow .25s;-webkit-text-stroke:1px rgba(0,0,0,.35)}
+@media (max-width:719px){.banner h1.bulbs{font-size:28px}.banner .bnicon{width:32px;height:32px}}
 /* DJ booth: Sir Mix-a-Lot mode (the mixer view) is always dark, with glowing deck colors */
 body.booth{--bg:#06080d;--panel:#0f151e;--ink:#e3eaf3;--muted:#8193a8;--rule:#223040;--row:#141c27;--accent:#F2B33D;--on-accent:#1B1305;--deckA:#4f8ff7;--deckB:#ff4d6a;--stage:#020305;color-scheme:dark;
  background:radial-gradient(ellipse at 50% -20%,#1a2233 0%,#06080d 60%)}
@@ -324,7 +328,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
  .sh-player{grid-area:mix;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.3fr);align-items:center;gap:12px}
 }
 </style>
-<header class="banner" id="banner"><canvas id="bannerCv" aria-hidden="true"></canvas><div class="bn"><h1>Treeinator</h1><span id="subtitle">Build playlists, edit designs and run the tree.</span></div></header>
+<header class="banner" id="banner"><canvas id="bannerCv" aria-hidden="true"></canvas><div class="bn"><img class="bnicon" src="icon.svg" alt="" width="40" height="40"><h1 class="bulbs" aria-label="Treeinator">Treeinator</h1><span id="subtitle">Build playlists, edit designs and run the tree.</span></div></header>
 <div class="app" id="app" data-view="shows" data-sub="pl">
  <div class="stage"><span class="tag" id="stageTag">TREE · NOW</span><canvas id="view" aria-label="Tree preview"></canvas>
   <div class="xf xfover mx" id="xfOver"><b class="a">A</b><input type="range" id="xf" min="0" max="100" step="1" value="0" aria-label="Crossfader"><b class="b">B</b><button id="swapBtn" type="button" title="Glide the crossfader to the other deck (about a second)">⇄ Swap</button></div>
@@ -1267,6 +1271,16 @@ Store.init().then(function(){local.setPlaylist(Store.playlist);syncOpts();render
 })();
 </script>
 <script>
+/* the name, lit like a string of bulbs: each letter its own colour, chasing along, the odd one twinkling */
+(function () {
+  var h = document.querySelector('.banner h1.bulbs'); if (!h) return;
+  var COL = ['#ff3b3b', '#ffd23f', '#2fbf5f', '#3bb3ff', '#ff9f1a', '#c36bff', '#ff5fa2'], L = h.textContent.split('');
+  h.innerHTML = L.map(function (c) { return '<i aria-hidden="true">' + c + '</i>'; }).join('');
+  var els = h.querySelectorAll('i'), k = 0, still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function paint() { for (var i = 0; i < els.length; i++) { var c = COL[(i + k) % COL.length], dim = !still && Math.random() < 0.06;
+    els[i].style.color = dim ? '#6b7280' : c; els[i].style.textShadow = dim ? 'none' : '0 0 6px ' + c + ',0 0 14px ' + c + '99'; } k++; }
+  paint(); if (!still) setInterval(paint, 650);
+})();
 /* the banner: a string of party bulbs chasing across the top, snow drifting down, little light-cone trees twinkling, and now and then Santa flies by */
 (function () {
   var cv = document.getElementById('bannerCv'); if (!cv) return;
