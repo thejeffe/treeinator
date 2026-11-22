@@ -79,16 +79,20 @@ function create(ctx) {
   const XB = ['Gingerbread', 'Peppermint', 'Candy Cane', 'Mistletoe', 'Holly', 'Cocoa', 'Eggnog', 'Snowflake', 'Sleigh Bell', 'Sugarplum', 'Tinsel', 'Chestnut',
     'Cranberry', 'Marshmallow', 'Fruitcake', 'Pinecone', 'Icicle', 'Snowball', 'Ornament', 'Stocking', 'Wreath', 'Cinnamon', 'Nutmeg', 'Garland', 'Toffee',
     'Fireside', 'Northpole', 'Velvet', 'Frost', 'Starlight'];
-  const XC = ['Elf', 'Reindeer', 'Snowman', 'Penguin', 'Nutcracker', 'Angel', 'Caroler', 'Polar Bear', 'Yeti', 'Owl', 'Fox', 'Bunny', 'Robin', 'Moose', 'Kitten',
-    'Puppy', 'Gnome', 'Drummer', 'Skater', 'Sledder', 'Baker', 'Fairy', 'Toy Soldier', 'Teddy', 'Squirrel', 'Lamb', 'Hedgehog', 'Otter', 'Badger', 'Sprite'];
+  const XC = ['Elf', 'Reindeer', 'Snowman', 'Penguin', 'Nutcracker', 'Angel', 'Caroler', 'Polar Bear', 'Yeti', 'Snowy Owl', 'Robin', 'Moose', 'Gnome',
+    'Drummer Boy', 'Skater', 'Sledder', 'Baker', 'Fairy', 'Toy Soldier', 'Teddy Bear', 'Lamb', 'Sprite', 'Shepherd', 'Wise Man', 'Santa', 'Jack Frost',
+    'Cardinal', 'Arctic Fox', 'Bell Ringer', 'Toymaker'];
   function xmasName(id) {
     let h = 2166136261;                                  // FNV-1a: the same id, the same name
     for (const ch of String(id)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
     return `${XA[h % 30]} ${XB[Math.floor(h / 30) % 30]} ${XC[Math.floor(h / 900) % 30]}`;
   }
   // Visits: a visitor's events with no gap over 30 minutes; each request with how it went.
+  // Over the whole log (90 days), so a phone is "new" only on its very first visit, and its rank (how active it is,
+  // against every phone seen) doesn't depend on the days shown.
   function summary(days) {
-    const ev = readLog(days), byT = {}, visits = [], open = {}, names = {}, taken = {};
+    const since = Date.now() - days * 864e5;
+    const ev = readLog(KEEP_DAYS), byT = {}, visits = [], open = {}, names = {}, taken = {};
     const nameOf = (id) => {                             // unique in the list: a clash gets the next name along
       if (names[id]) return names[id];
       let n = xmasName(id);
@@ -100,7 +104,7 @@ function create(ctx) {
       if (!e.v && !e.who) continue;
       if (['played', 'done', 'cut', 'skipped', 'removed', 'dropped'].includes(e.k) && !e.v) continue; // the tree's own notes join their request below
       const id = e.v || e.who, cur = open[id];
-      const vs = cur && e.at - cur.last <= 30 * 60000 ? cur : (open[id] = { visitor: nameOf(id), code: String(id).slice(0, 6), dev: e.dev || '', start: e.at, last: e.at, looked: [], cats: [], sent: [], refused: [], geo: null, dist: null });
+      const vs = cur && e.at - cur.last <= 30 * 60000 ? cur : (open[id] = { id, visitor: nameOf(id), code: String(id).slice(0, 6), dev: e.dev || '', start: e.at, last: e.at, looked: [], cats: [], sent: [], refused: [], geo: null, dist: null });
       if (vs !== cur) visits.push(vs);
       vs.last = e.at; if (e.dev && !vs.dev) vs.dev = e.dev;
       if (e.k === 'pick' && e.name && !vs.looked.includes(e.name)) vs.looked.push(e.name);
@@ -115,7 +119,18 @@ function create(ctx) {
       }
       if (e.k === 'refused' && e.why !== 'flood' && !/^One moment/.test(e.reason || '')) vs.refused.push({ at: e.at, reason: e.reason, why: e.why }); // (quick taps aren't turn-aways)
     }
-    return visits.sort((a, b) => b.last - a.last).slice(0, 300); // most recently active first
+    // each phone: its visits in order, and a score (sends count most, then visits, then designs looked at) to rank it
+    const per = {};
+    for (const v of visits) { const q = per[v.id] = per[v.id] || { n: 0, score: 0 }; v.nth = ++q.n; q.score += 2 + v.sent.length * 3 + v.looked.length * 0.5; }
+    const order = Object.keys(per).sort((a, b) => per[b].score - per[a].score), phones = order.length;
+    order.forEach((id, i) => { per[id].rank = i + 1; });
+    for (const v of visits) {
+      const q = per[v.id];
+      v.visits = q.n; v.rank = q.rank; v.phones = phones;
+      v.level = q.n < 2 ? '' : q.rank <= Math.max(1, Math.ceil(phones * 0.1)) ? 'Superfan' : q.rank <= Math.ceil(phones * 0.33) ? 'Regular' : 'Drops by';
+      delete v.id;
+    }
+    return visits.filter((v) => v.last >= since).sort((a, b) => b.last - a.last).slice(0, 300); // most recently active first
   }
   prune(); setInterval(prune, 864e5).unref();
 
