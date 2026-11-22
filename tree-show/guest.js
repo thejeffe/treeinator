@@ -218,6 +218,8 @@ function create(ctx) {
     skip() { if (cur) { cur.skip = true; cur.ends = 0; tick(); } },
     remove(t) { t = String(t); items = items.filter((x) => x.t !== t); played.add(t); drop.push(t); note([{ at: Date.now(), k: 'removed', t }]); sync(true); }, // the owner takes one out of the line
     summary, log: (days) => readLog(days),
+    // what the tree's own page shows while a guest's pick plays: whose design, how long it has left, and how many wait
+    playing() { return cur ? { name: cur.name, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)), waiting: items.length } : null; },
     status() {
       const c = ctx.cfg(), st = state();
       return { enabled: c.enabled, paused: c.paused, geo: c.geo, geoReady: !!ctx.location(), open: st.open, reason: st.reason, site: c.url || null, waiting: items.length,

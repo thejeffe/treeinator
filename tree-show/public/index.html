@@ -221,6 +221,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
 .mode.manual{border-color:var(--muted)}.mode.manual b{background:var(--muted);color:var(--panel)}
 .mode.sched{border-color:var(--ok)}.mode.sched b{background:var(--ok);color:#fff}
 .mode.override{border-color:var(--accent)}.mode.override b{background:var(--accent);color:var(--on-accent)}
+.mode.guest{border-color:#c36bff}.mode.guest b{background:#c36bff;color:#fff}.mode.guest #modeInfo{font-variant-numeric:tabular-nums}
 #modeAct{display:none;flex:none;margin-left:auto;font:600 12px var(--body);color:var(--accent);white-space:nowrap;opacity:.9}
 .mode.override #modeAct{display:inline-block}
 @media (max-width:519px){#modeAct .lg{display:none}#modeAct{font-size:15px}}
@@ -679,7 +680,7 @@ var LSKEY='tree-shows-v1';
 var Store={server:false,designs:[],playlist:null,playlists:[],activeId:null,status:null,
  init:function(){return fetch('api/state',{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){if(!j||!Array.isArray(j.designs))throw 0;Store.server=true;Store.designs=j.designs;Store.removed=j.removed||[];Store.playlists=j.playlists||[Object.assign({id:'main',name:'Playlist'},j.playlist)];Store.activeId=j.activeId||Store.playlists[0].id;
    var want=null;try{want=localStorage.getItem('treeSelPl')}catch(e){}Store.playlist=Store.playlists.find(function(x){return x.id===want})||Store.playlists.find(function(x){return x.id===Store.activeId})||Store.playlists[0];
-   Store.status=j.status;connectWs()}).catch(function(){Store.server=false;var s=null;try{s=JSON.parse(localStorage.getItem(LSKEY)||'null')}catch(e){}
+   Store.status=j.status;guestSync();connectWs()}).catch(function(){Store.server=false;var s=null;try{s=JSON.parse(localStorage.getItem(LSKEY)||'null')}catch(e){}
    if(!s||!Array.isArray(s.designs)){s=E.starterShows();}if(E.mergeLibrary(s))try{localStorage.setItem(LSKEY,JSON.stringify(s))}catch(e){}
    Store.designs=s.designs;Store.removed=s.removed||[];Store.playlist=s.playlist;Store.playlist.running=false;Store.playlist.id='main';Store.playlist.name=Store.playlist.name||'Playlist';Store.playlists=[Store.playlist];Store.activeId='main'})},
  removed:[],
@@ -695,7 +696,7 @@ var Store={server:false,designs:[],playlist:null,playlists:[],activeId:null,stat
  plTimer:null,
  putPlaylist:function(){if(!Store.server){Store.saveLocal();return}clearTimeout(Store.plTimer);var pl=Store.playlist;Store.plTimer=setTimeout(function(){Store.api('PUT','api/playlists/'+encodeURIComponent(pl.id),pl).catch(function(e){say(smsg,e.message,true)})},300)},
  player:function(action,extra){if(!Store.server)return Promise.reject(new Error('Open this page from tree-show to play on the tree.'));var b={action:action};for(var k in extra||{})b[k]=extra[k];
-   return Store.api('POST','api/player',b).then(function(st){Store.status=st;renderNow();return st})}
+   return Store.api('POST','api/player',b).then(function(st){Store.status=st;guestSync();renderNow();return st})}
 };
 function getDesign(id){return Store.designs.find(function(d){return d.id===id})||null}
 
@@ -714,7 +715,7 @@ $('reloadBtn').addEventListener('click',hardReload);
 function connectWs(){try{ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+location.pathname.replace(/[^/]*$/,'')+'ws');ws.binaryType='arraybuffer'}catch(e){return}
  ws.onopen=function(){wsBackoff=1000;watching=false;updateWatch()};
  ws.onmessage=function(e){if(typeof e.data!=='string'){if(e.data.byteLength===N*3){mirror.set(new Uint8Array(e.data));mirrorAt=performance.now()}return}
-  try{var j=JSON.parse(e.data);if(j.type==='status'){var chg=Store.activeId!==j.activeId||!!(Store.status&&Store.status.playing)!==!!j.playing;Store.status=j;checkBuild(j.build);updateWatch();if(j.activeId)Store.activeId=j.activeId;renderNow();if(chg)fillPlSel()}else if(j.type==='error'){say(msg,j.error,true);var cm=$('calMsg');if(cm)say(cm,j.error+' Reload the page (↻) if tree-show was updated.',true)}}catch(_){}};
+  try{var j=JSON.parse(e.data);if(j.type==='status'){var chg=Store.activeId!==j.activeId||!!(Store.status&&Store.status.playing)!==!!j.playing;Store.status=j;guestSync();checkBuild(j.build);updateWatch();if(j.activeId)Store.activeId=j.activeId;renderNow();if(chg)fillPlSel()}else if(j.type==='error'){say(msg,j.error,true);var cm=$('calMsg');if(cm)say(cm,j.error+' Reload the page (↻) if tree-show was updated.',true)}}catch(_){}};
  ws.onclose=function(){ws=null;if(live)stopLive('Lost the connection to tree-show. Reconnecting…');setTimeout(connectWs,wsBackoff);wsBackoff=Math.min(10000,wsBackoff*2)}}
 function wsSend(x){if(ws&&ws.readyState===1)ws.send(x)}
 // Watch the real tree feed: on Shows, and in Sir Mix-a-Lot whenever this page isn't the one live (the stage then shows what the tree really gets).
@@ -840,9 +841,13 @@ function t12s(hm){if(!hm)return '';if(hm==='24:00'||hm==='00:00')return 'midnigh
 function whenTxt(x){if(!x)return '';if(x.day&&x.day!=='today'&&x.day!=='tomorrow')return x.day+(x.at?' at '+(x.sun?x.sun+' (≈'+t12s(x.at)+')':t12s(x.at)):'');var t=x.sun?x.sun.replace(/([+-])(\d+)$/,function(_,sg,n){n=+n;return ' '+(sg==='+'?'+':'−')+(n>=60?Math.floor(n/60)+' h'+(n%60?' '+n%60+' min':''):n+' min')})+' (≈'+t12s(x.at)+')':t12s(x.at);return t+(x.day==='tomorrow'?' tomorrow':'')}
 // Short, one-line status: what the tree is doing · when that changes. The full sentence is in the tooltip.
 function whenShort(x){if(!x)return '';var d=x.day&&x.day!=='today'?(x.day==='tomorrow'?'tomorrow ':x.day+' '):'';return d+(x.at?t12s(x.at):'')}
+var guestEnds=0,guestTick=0;
+function guestSync(){var g=Store.status&&Store.status.guest;guestEnds=g?Date.now()+g.left*1000:0;if(g&&!guestTick)guestTick=setInterval(function(){if(!guestEnds){clearInterval(guestTick);guestTick=0;return}renderMode()},1000)}
 function renderMode(){var s=Store.status,sc=s&&s.schedule,b=$('modeBadge'),nm=$('modeName'),inf=$('modeInfo');
  function set(cls,name,short,long){b.className='mode '+cls;var ph=window.innerWidth<520;nm.textContent=name==='ON SCHEDULE'&&ph?'SCHED':name;inf.textContent=(cls==='override'&&ph?'Override · ':'')+short;b.title=(long||short)+(cls==='override'?' Tap to end the override and go back to the schedule.':' (tap for the schedule)')}
  if(!Store.server)return set('manual','OFFLINE','Not connected to tree-show');
+ var g=s&&s.guest;if(g&&guestEnds){var gl=Math.max(0,Math.round((guestEnds-Date.now())/1000)),back=sc&&sc.following&&sc.want!=='off'?(sc.want==='design'?'“'+(sc.design||'design')+'”':sc.playlist||'the playlist'):(s.playlistName||'the playlist'),more=g.waiting?' ('+g.waiting+' more in line)':'';
+  return set('guest','GUEST','“'+g.name+'” · '+gl+' s left'+(g.waiting?' · '+g.waiting+' waiting':', then '+back),'A guest’s pick, “'+g.name+'”, is playing: '+gl+' seconds left'+(g.waiting?', then the next guest'+more:', then back to '+back)+'.')}
  if(!sc||!sc.enabled)return set('manual','MANUAL','No schedule · plays only when you press Play','No schedule: the tree only plays when you press Play on tree.');
  var u=sc.untilInfo,nx=sc.next,what=sc.want==='design'?'“'+(sc.design||'design')+'”':sc.playlist||'playlist',playing=!!(s&&s.playing);
  if(sc.following){

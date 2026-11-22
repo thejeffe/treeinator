@@ -381,7 +381,7 @@ let loopErrSince = 0, loopErrLogged = 0;
 })();
 
 function status() {
-  return { type: 'status', player: player.status(), playing: !!db.playlist.running, live: Date.now() < liveUntil, bright: baseBright(), userBright: db.bright != null ? db.bright : 1, brightLock: schedBright != null, brightOverride: brightOv, build: BUILD, schedule: scheduleStatus(), activeId: db.activeId, playlistName: db.playlist.name, wled: { host: CFG.wledHost, resolved: !!wledAddr, error: lastSendErr } };
+  return { type: 'status', player: player.status(), playing: !!db.playlist.running, live: Date.now() < liveUntil, bright: baseBright(), userBright: db.bright != null ? db.bright : 1, brightLock: schedBright != null, brightOverride: brightOv, build: BUILD, guest: guest ? guest.playing() : null, schedule: scheduleStatus(), activeId: db.activeId, playlistName: db.playlist.name, wled: { host: CFG.wledHost, resolved: !!wledAddr, error: lastSendErr } };
 }
 setInterval(() => broadcast(status()), 1000);
 
