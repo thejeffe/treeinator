@@ -2,7 +2,21 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;1,800&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<style>html{touch-action:manipulation;-webkit-text-size-adjust:100%}</style><script>/* no zooming on phones (iPhone Safari ignores user-scalable=no for pinches, so stop the gesture itself) */['gesturestart','gesturechange'].forEach(function(k){document.addEventListener(k,function(e){e.preventDefault()},{passive:false})});document.addEventListener('touchmove',function(e){if(e.touches.length>1||(e.scale!==undefined&&e.scale!==1))e.preventDefault()},{passive:false});</script>
+<style>html{touch-action:manipulation;-webkit-text-size-adjust:100%}/* dialog bars (dlgbar.js): the title and the buttons, as icons, stuck to the top while the dialog scrolls */
+.dlgbar{position:sticky;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;grid-column:1/-1;margin:calc(var(--dp,16px) * -1) calc(var(--dp,16px) * -1) 0;top:var(--dtop,0px);padding:10px 12px 10px var(--dp,16px);background:var(--panel);border-bottom:1px solid var(--rule);box-shadow:0 6px 12px -10px rgba(0,0,0,.5)}
+.dlgbar h2{margin:0!important;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlgtools{display:flex;gap:6px;align-items:center;flex:none}
+.dlgtools button{flex:none}
+.dlgtools button.ico{width:40px;height:38px;padding:0!important;display:grid;place-items:center;border-radius:9px}
+.dlgtools button.ico svg{width:21px;height:21px}
+.dlgtools button.ico-save{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.dlgtools button.ico-close{background:transparent}
+.dlgtools button:disabled{opacity:.45}
+.dlgbar .dlgmsg{flex-basis:100%;margin:0!important;font-size:13px}
+.dlgbar .dlgmsg:empty{display:none}
+#edDlg,#calDlg{--dp:14px}
+#setDlg,#edDlg,#schDlg,#calDlg{overflow:auto}
+</style><script>/* no zooming on phones (iPhone Safari ignores user-scalable=no for pinches, so stop the gesture itself) */['gesturestart','gesturechange'].forEach(function(k){document.addEventListener(k,function(e){e.preventDefault()},{passive:false})});document.addEventListener('touchmove',function(e){if(e.touches.length>1||(e.scale!==undefined&&e.scale!==1))e.preventDefault()},{passive:false});</script>
 <style>
 /* Layout: one-screen console. Phone: tree left, controls right (Mix or Shows view). Wide: Deck A | tree | Deck B over a bottom bar; Shows view puts playlist | tree | designs over the player bar. */
 :root{--bg:#EEF1F4;--panel:#FFFFFF;--ink:#1B2836;--muted:#5B6B7B;--rule:#CBD4DD;--accent:#C27400;--on-accent:#FFFFFF;--deckA:#2D68C4;--deckB:#C8102E;--stage:#0A0E15;--err:#C23B3B;--ok:#2E8B57;--row:#F4F6F8;
@@ -1342,3 +1356,4 @@ Store.init().then(function(){local.setPlaylist(Store.playlist);syncOpts();render
 })();
 </script>
 <script src="downwatch.js" data-ping="health" data-offline="/offline.html"></script>
+<script src="dlgbar.js"></script>
