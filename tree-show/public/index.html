@@ -14,6 +14,8 @@
 .dlgtools button:disabled{opacity:.45}
 .dlgbar .dlgmsg{flex-basis:100%;margin:0!important;font-size:13px}
 .dlgbar .dlgmsg:empty{display:none}
+/* dialogs sit at the top of the screen (not centred), so they don't jump about when their length changes */
+dialog[open]{margin:max(12px, env(safe-area-inset-top, 0px)) auto auto}
 .dlgbar .dlgtabs{flex-basis:100%;margin:2px 0 0!important}
 #edDlg,#calDlg{--dp:14px}
 #setDlg,#edDlg,#schDlg,#calDlg{overflow:auto}
