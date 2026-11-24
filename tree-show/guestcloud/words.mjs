@@ -8,21 +8,17 @@ const ALLOWED = /^[A-Z0-9 !?.,'\-&*+#:<]*$/;
 
 // Anywhere in the message (after removing spaces and symbols): long or unmistakable words.
 const ANYWHERE = [
-  'fuck', 'fuk', 'fck', 'phuck', 'shit', 'sh1t', 'cunt', 'bitch', 'biatch', 'bastard', 'asshole', 'arsehole', 'dickhead',
-  'motherf', 'whore', 'slut', 'penis', 'vagina', 'pussy', 'porn', 'nigg', 'nigga', 'faggot', 'fagot', 'retard', 'tranny',
-  'kike', 'chink', 'spic', 'wetback', 'coon', 'raghead', 'towelhead', 'hitler', 'nazi', 'heil', 'kkk', 'jizz', 'cumshot',
-  'blowjob', 'handjob', 'dildo', 'wank', 'twat', 'bollock', 'boner', 'horny', 'orgasm', 'anal', 'semen', 'clit', 'boob',
-  'testicle', 'scrotum', 'killyourself', 'suicide', 'pedo', 'molest', 'isis', 'jihad', 'gangbang', 'milf', 'butthole',
+  'fuck', 'fuk', 'fck', 'phuck', 'shit', 'sh1t', 'cunt', 'bitch', 'biatch', 'bastard', 'asshole', 'arsehole', 'dickhead', 'motherf', 'whore', 'slut', 'penis', 'vagina', 'pussy', 'porn', 'nigg', 'nigga', 'faggot', 'fagot', 'retard', 'tranny', 'wetback', 'raghead', 'towelhead', 'hitler', 'nazi', 'kkk', 'jizz', 'cumshot', 'blowjob', 'handjob', 'dildo', 'twat', 'bollock', 'boner', 'horny', 'orgasm', 'semen', 'testicle', 'scrotum', 'killyourself', 'suicide', 'molest', 'jihad', 'gangbang', 'milf', 'butthole', 'pedophile', 'wanker',
 ];
 // Only as a whole word (they're inside ordinary words: class, cocktail, title, cucumber, grape, sussex, hello).
 const WHOLE = [
-  'ass', 'arse', 'asses', 'damn', 'hell', 'cock', 'cocks', 'dick', 'dicks', 'tit', 'tits', 'titty', 'cum', 'sex', 'sexy',
-  'rape', 'raped', 'fag', 'fags', 'gay', 'homo', 'dyke', 'jap', 'gook', 'kys', 'wtf', 'stfu', 'gtfo', 'fu', 'nut', 'nuts',
-  'balls', 'crap', 'piss', 'pissed', 'poop', 'butt', 'hoe', 'hoes', 'thot', 'nude', 'nudes', 'naked', 'kill', 'die',
-  'drugs', 'weed', 'meth', 'coke', 'trump', 'biden', 'maga',
+  'ass', 'arse', 'asses', 'cock', 'cocks', 'dick', 'dicks', 'tit', 'tits', 'titty', 'cum', 'sex', 'sexy', 'rape', 'raped', 'fag', 'fags', 'homo', 'dyke', 'jap', 'gook', 'kys', 'wtf', 'stfu', 'gtfo', 'fu', 'piss', 'pissed', 'hoe', 'hoes', 'thot', 'nude', 'nudes', 'naked', 'spic', 'spics', 'coon', 'coons', 'anal', 'wank', 'wanking', 'kike', 'kikes', 'chink', 'chinks', 'clit', 'clits', 'boob', 'boobs', 'heil', 'isis', 'pedo', 'pedos',
 ];
 // Not on a front yard tree either: web addresses, handles and phone numbers.
 const SPAM = [/https?/i, /www/i, /\.(com|net|org|io|co|us|ly|gg|tv)\b/i, /@/, /\d[\d\s\-.]{6,}\d/];
+
+// ordinary words and places that contain a blocked word: taken out before checking
+const SAFE = ['scunthorpe', 'penistone', 'pussycat', 'pussywillow', 'pussy willow', 'shiitake', 'shitake', 'cockburn', 'dickens', 'essex', 'sussex', 'middlesex'];
 
 const LEET = { '0': 'o', '1': 'i', '!': 'i', '|': 'i', '3': 'e', '4': 'a', '@': 'a', '5': 's', '$': 's', '7': 't', '+': 't', '8': 'b', '9': 'g', '6': 'g' };
 function deleet(s) { return s.toLowerCase().replace(/[0-9!|@$+]/g, (c) => LEET[c] || c); }
@@ -40,12 +36,14 @@ export function checkMessage(raw) {
 }
 
 export function isBad(text) {
-  const low = deleet(text);
-  const letters = low.replace(/[^a-z]/g, ''), squeezed = squeeze(letters);
-  for (const w of ANYWHERE) if (letters.includes(w) || squeezed.includes(squeeze(w))) return true;
+  let low = deleet(text);
+  for (const w of SAFE) low = low.split(w).join(' ');
+  const letters = low.replace(/[^a-z]/g, ''), squeezed = squeeze(letters), twice = letters.replace(/(.)\1{2,}/g, '$1$1');
+  // stretched letters: "shiiit" matches shit; a word with double letters matches when stretched further ("asssshole")
+  for (const w of ANYWHERE) if (letters.includes(w) || twice.includes(w) || (squeeze(w) === w && squeezed.includes(w))) return true;
   const words = low.split(/[^a-z]+/).filter(Boolean);
   const wholeSet = new Set(WHOLE);
-  for (const w of words) if (wholeSet.has(w) || wholeSet.has(squeeze(w))) return true;
+  for (const w of words) if (wholeSet.has(w) || wholeSet.has(w.replace(/(.)\1{2,}/g, '$1$1')) || wholeSet.has(squeeze(w))) return true;
   // spaced out: "s h i t", "a s s": single letters in a row, joined
   const runs = low.split(/[^a-z]+/).reduce((acc, w) => { if (w.length === 1) acc[acc.length - 1] += w; else acc.push(''); return acc; }, ['']);
   for (const r of runs) if (r.length >= 2 && (wholeSet.has(r) || wholeSet.has(squeeze(r)) || ANYWHERE.some((w) => r.includes(w)))) return true;
