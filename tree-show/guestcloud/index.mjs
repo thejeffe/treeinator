@@ -87,7 +87,7 @@ async function update(k, fn, empty) {
 // it decides (sent, refused, cancelled). Kept in the 'events' item (the newest EVENTS_MAX, numbered); tree-show
 // collects them as it checks in (evAfter) and keeps its own log, where it also notes what played.
 // A visitor is a random id the page keeps on the phone (v), plus a hash of the address (who); no names, no addresses.
-const EVENTS_MAX = 2000, CLIENT_KINDS = ['open', 'cat', 'pick', 'color', 'line', 'reload', 'geo-ok', 'geo-denied', 'geo-far', 'leave', 'share'];
+const EVENTS_MAX = 2000, CLIENT_KINDS = ['open', 'cat', 'pick', 'color', 'line', 'reload', 'geo-ok', 'geo-denied', 'geo-far', 'leave', 'share', 'game'];
 function device(ev) {
   const ua = String((ev.headers || {})['user-agent'] || '');
   const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'Other';

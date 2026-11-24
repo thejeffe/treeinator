@@ -111,6 +111,7 @@ function create(ctx) {
       if (e.k === 'cat' && e.c && !vs.cats.includes(e.c)) vs.cats.push(e.c);
       if (e.k === 'geo-denied') vs.geo = 'refused to share location';
       if (e.k === 'share') vs.shared = true;
+      if (e.k === 'game') vs.game = true;
       if (e.k === 'sent') {
         if (e.dist != null) vs.dist = e.dist;
         const what = byT[e.t] || [], pl = what.find((x) => x.k === 'played'), end = what.find((x) => x.k !== 'played');
