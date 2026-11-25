@@ -949,6 +949,7 @@ document.querySelectorAll('#viewSeg button[data-v]').forEach(function(b){b.addEv
  $('sGaDays').onclick=function(e){var b=e.target.closest('button');if(!b)return;gaDays=+b.dataset.d;this.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});guestActivity()};
  $('sTabs').addEventListener('click',function(e){var b=e.target.closest('button[data-t="guest"]');if(b)guestActivity()});
  $('sGaRef').onclick=guestActivity;
+ window.guestActivity=guestActivity; // for ☰ Guests
  setInterval(function(){var l=$('sGaList');if(l&&l.offsetParent)guestActivity()},15000); // every 15 s while the Guests tab is open
  $('sGqSkip').onclick=function(){fetch('api/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"action":"skip"}'}).then(guestStat)};
  $('sGqClear').onclick=function(){if(confirm('Clear everyone waiting in the line?'))fetch('api/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"action":"clear"}'}).then(function(){setTimeout(guestStat,500)})};
