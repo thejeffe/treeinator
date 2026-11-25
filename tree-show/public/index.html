@@ -18,7 +18,10 @@
 dialog[open]{margin:max(12px, env(safe-area-inset-top, 0px)) auto auto}
 .dlgbar .dlgtabs{flex-basis:100%;margin:2px 0 0!important}
 #edDlg,#calDlg{--dp:14px}
-#setDlg,#edDlg,#schDlg,#calDlg{overflow:auto}
+#setDlg,#edDlg,#schDlg,#calDlg,#gaDlg{overflow:auto}
+#gaDlg{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:12px;padding:0;width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+#gaDlg form{display:grid;gap:10px;padding:16px}
+#gaHost .gact{display:block}
 .ganew{color:var(--ok)}.garet{color:var(--accent)}.galvl{color:#f2c14e;white-space:nowrap}
 </style><script>/* no zooming on phones (iPhone Safari ignores user-scalable=no for pinches, so stop the gesture itself) */['gesturestart','gesturechange'].forEach(function(k){document.addEventListener(k,function(e){e.preventDefault()},{passive:false})});document.addEventListener('touchmove',function(e){if(e.touches.length>1||(e.scale!==undefined&&e.scale!==1))e.preventDefault()},{passive:false});</script>
 <style>
@@ -354,7 +357,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
  </div>
  <div class="ctrl">
   <button type="button" id="modeBadge" class="mode manual" title="Open the schedule"><b id="modeName">MANUAL</b><span id="modeInfo">No schedule · plays only when you press Play</span><span id="modeAct" aria-label="Resume schedule">↺<span class="lg"> Resume</span></span></button>
-  <div class="seg2" id="viewSeg" role="group" aria-label="View"><button aria-pressed="true" data-v="shows">Shows</button><button aria-pressed="false" data-v="mix">Sir Mix-a-Lot</button><div class="amenu"><button type="button" id="menuBtn" class="menubtn" aria-haspopup="menu" aria-expanded="false" aria-label="Menu" title="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><div class="menupop" id="menuPop" role="menu" hidden><button type="button" role="menuitem" id="reloadBtn" title="Reload the app with the latest version"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg><span id="reloadLbl">Reload</span></button><button type="button" role="menuitem" id="setBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg><span>Settings</span></button></div></div></div>
+  <div class="seg2" id="viewSeg" role="group" aria-label="View"><button aria-pressed="true" data-v="shows">Shows</button><button aria-pressed="false" data-v="mix">Sir Mix-a-Lot</button><div class="amenu"><button type="button" id="menuBtn" class="menubtn" aria-haspopup="menu" aria-expanded="false" aria-label="Menu" title="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><div class="menupop" id="menuPop" role="menu" hidden><button type="button" role="menuitem" id="reloadBtn" title="Reload the app with the latest version"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg><span id="reloadLbl">Reload</span></button><button type="button" role="menuitem" id="guestBtn"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2c3 .2 5.5 2.6 5.5 5.8"/></svg><span>Guests</span></button><button type="button" role="menuitem" id="setBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg><span>Settings</span></button></div></div></div>
 
   <!-- MIX -->
   <div class="seg2 mx" id="tabs"><button aria-pressed="true" data-d="0">Deck A</button><button aria-pressed="false" data-d="1">Deck B</button></div>
@@ -508,6 +511,13 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
    <div class="msg" id="calMsg" role="status"></div>
   </div>
   <div class="acts"><button type="button" id="calDone">Done</button></div>
+ </form>
+</dialog>
+<dialog id="gaDlg" aria-labelledby="gaTitle">
+ <form method="dialog" id="gaForm">
+  <h2 id="gaTitle">Guests</h2>
+  <div id="gaHost"></div>
+  <div class="acts"><button type="button" id="gaDone">Done</button></div>
  </form>
 </dialog>
 <dialog id="setDlg" aria-labelledby="setTitle">
@@ -1363,4 +1373,21 @@ Store.init().then(function(){local.setPlaylist(Store.playlist);syncOpts();render
 })();
 </script>
 <script src="downwatch.js" data-ping="health" data-offline="/offline.html"></script>
+<script>
+/* ☰ Guests: the guest activity (who visited, what they tapped and sent, and whether it played) in its own window,
+   without going through Settings. The activity block from Settings → Guests is moved in while it's open. */
+(function () {
+  var dlg = document.getElementById('gaDlg'), host = document.getElementById('gaHost'), home = null, after = null;
+  function open() {
+    var g = document.querySelector('.gact'); if (!g) return;
+    if (g.parentNode !== host) { home = g.parentNode; after = g.nextSibling; host.appendChild(g); }
+    dlg.showModal();
+    if (typeof guestActivity === 'function') guestActivity();
+  }
+  function close() { if (home) { home.insertBefore(document.querySelector('#gaHost .gact'), after); home = null; } if (dlg.open) dlg.close(); }
+  document.getElementById('guestBtn').addEventListener('click', open);
+  document.getElementById('gaDone').addEventListener('click', close);
+  dlg.addEventListener('close', function () { if (home) { home.insertBefore(host.querySelector('.gact'), after); home = null; } });
+})();
+</script>
 <script src="dlgbar.js"></script>

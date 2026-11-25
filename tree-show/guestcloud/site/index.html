@@ -167,6 +167,8 @@ body.closedMode .pupil{display:none}
 #gameOv #gGame{height:auto!important;max-width:100%;border-radius:14px;box-shadow:0 10px 40px #0008;touch-action:none;display:block}
 #gPlay{font:700 15px/1 system-ui,sans-serif;padding:11px 20px;border-radius:12px;border:0;background:#f2c14e;color:#111;cursor:pointer}
 #gameOv small{color:#9fb0c3;text-align:center}
+#q li.hdr{list-style:none;font:700 11px/1.4 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;opacity:.6;margin:6px 0 2px}
+#q li.show{opacity:.7}
 </style>
 </head>
 <body>
@@ -315,13 +317,17 @@ function drawQueue(q) {
   if (!q.open) t = '<div class="badge">' + ({ paused: '⏸ PAUSED', resting: '💤 RESTING', live: '🎛 LIVE SHOW', offline: 'OFFLINE' }[why] || 'CLOSED') + '</div><br><b>' + esc(q.reason || 'The tree isn’t taking requests right now.') + '</b>'
     + '<br><button type="button" class="gplay" data-game="1">🎁 Help Santa deliver presents</button>';
   else if (q.now) t = '<b>' + esc(q.now.name) + '</b>' + swatches(q.now.colors) + (q.now.msg ? ' “' + showMsg(q.now.msg) + '”' : '') + '<small>' + (q.now.mine ? 'Yours! 🎄 ' : 'A guest’s pick · ') + q.now.left + ' s left</small>';
+  else if (q.show) t = '<b>' + esc(q.show.name) + '</b><small>The tree’s own show' + (q.show.left != null ? ' · ' + q.show.left + ' s left' : '') + ' · yours could be next!</small>';
   else t = '<b>The tree’s own show</b><small>Yours could be next!</small>';
   $('nowTxt').innerHTML = t;
-  var mine = [];
+  var mine = [], showNext = q.show && q.show.next ? q.show.next : [];
   $('q').innerHTML = q.items.map(function (it, i) {
     if (it.mine) mine.push(i);
     return '<li class="' + (it.mine ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><span class="w">' + (it.mine ? '★ ' : '') + esc(it.name) + swatches(it.colors) + (it.msg ? ' <small>“' + showMsg(it.msg) + '”</small>' : '') + '</span>' + (it.mine ? '<button class="x" type="button" data-cancel="' + esc(it.t) + '">Cancel</button>' : '') + '</li>';
-  }).join('');
+  }).join('')
+    // then the tree's own show: the next designs on its playlist (guests' picks play in between)
+    + (showNext.length ? '<li class="hdr">' + (q.items.length ? 'Then the tree’s show' : 'Coming up on the tree’s show') + (q.show.mode === 'shuffle' ? ' (shuffled)' : '') + '</li>'
+      + showNext.map(function (n, i) { return '<li class="show"><span class="n">' + (i + 1) + '</span><span class="w">' + esc(n) + '</span></li>'; }).join('') : '');
   $('q').querySelectorAll('[data-cancel]').forEach(function (c) { c.onclick = function () { cancel(c.dataset.cancel); }; });
   // forget tickets that have played (or were cleared)
   var live = q.items.filter(function (i) { return i.mine; }).map(function (i) { return i.t; });
@@ -331,9 +337,10 @@ function drawQueue(q) {
   myCount = mine.length;
   // one line: how many, yours, and the next few names
   var names = q.items.slice(0, 3).map(function (it) { return esc(it.name); }).join(', ') + (q.items.length > 3 ? '…' : '');
-  $('nextTxt').innerHTML = '<b>Up next · ' + q.items.length + '</b>' + (mine.length ? ' <span class="me">(' + mine.length + ' yours)</span>' : '') + ' ' + names;
-  if (!q.items.length) lineOpen = false;
-  $('lineBtn').classList.toggle('hide', !q.items.length);
+  $('nextTxt').innerHTML = q.items.length ? '<b>Up next · ' + q.items.length + '</b>' + (mine.length ? ' <span class="me">(' + mine.length + ' yours)</span>' : '') + ' ' + names
+    : '<b>Up next</b> ' + showNext.slice(0, 3).map(esc).join(', ') + (showNext.length > 3 ? '…' : '');
+  if (!q.items.length && !showNext.length) lineOpen = false;
+  $('lineBtn').classList.toggle('hide', !q.items.length && !showNext.length);
   $('lineBtn').setAttribute('aria-expanded', String(lineOpen));
   $('q').classList.toggle('hide', !lineOpen);
   if (q.now && q.now.mine) say('That’s yours on the tree now! 🎄' + (mine.length ? ' · ' + mine.length + ' more in line' : ''), true);

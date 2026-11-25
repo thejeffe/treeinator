@@ -613,6 +613,15 @@
     }
     return true;
   };
+  Player.prototype.upcoming = function (n) {
+    if (!this.running || this.pl.mode === 'random') return [];
+    var items = this._validItems(), out = [];
+    if (!items.length) return out;
+    if (this.pl.mode === 'shuffle') { for (var i = this.order.length - 1; i >= 0 && out.length < n; i--) out.push(items[this.order[i]]); }
+    else for (var k = 1; k <= n && k <= items.length; k++) out.push(items[(this.pos + k) % items.length]);
+    var self = this;
+    return out.map(function (it) { var d = self.getDesign(it.id); return d ? { name: d.name, sec: +it.sec || self.pl.sec } : null; }).filter(Boolean);
+  };
   Player.prototype.status = function () {
     return { running: this.running, mode: this.pl.mode, name: this.cur ? this.cur.d.name : null, id: this.cur ? this.cur.d.id : null, hold: !!(this.cur && this.cur.hold), left: this.cur ? Math.max(0, Math.round(this.cur.left)) : 0, sec: this.cur ? this.cur.sec : 0, count: this.pl.items.length };
   };

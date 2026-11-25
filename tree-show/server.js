@@ -1038,7 +1038,8 @@ guest = GQ.create({
   designs: () => db.designs, getDesign, playlists: () => db.playlists, player,
   holdDesign: () => db.playlist.hold || null, running: () => !!(db.playlist.running && player.running), live: () => Date.now() < liveUntil,
   location: () => { const sc = db.schedule || {}; return typeof sc.lat === 'number' && typeof sc.lon === 'number' ? { lat: sc.lat, lon: sc.lon } : null; },
-  scheduleOn: () => { const w = scheduleWant(new Date()); return !w ? { on: true } : { on: w.kind !== 'off', back: w.kind === 'off' ? backAt() : null }; },
+  // the tree turned on by hand while the schedule has it resting (a manual override) takes guests just like a scheduled time
+  scheduleOn: () => { const w = scheduleWant(new Date()); if (!w || w.kind !== 'off' || (db.playlist.running && player.running)) return { on: true }; return { on: false, back: backAt() }; },
 });
 guest.start();
 server.listen(CFG.httpPort, () => log(`tree-show on http://0.0.0.0:${CFG.httpPort} · WLED ${CFG.wledHost}:${CFG.wledPort} · data ${DATA_FILE} · playlist ${db.playlist.running ? 'playing' : 'stopped'}`));

@@ -137,6 +137,7 @@ function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
     open, why: open ? null : now - q.seen >= TREE_STALE_MS ? 'offline' : q.why || 'closed', back: open ? null : q.back || null,
     reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
     geo: !!q.geo, sec: q.sec, perGuest: share(q).max, busy: share(q).busy, cat: q.catHash || null, // cat: the design list's version
+    show: open && !q.now && q.show ? { name: q.show.name, left: q.show.ends ? Math.max(0, Math.round((q.show.ends - now) / 1000)) : null, mode: q.show.mode, next: q.show.next } : null,
     now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
     items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
   };
@@ -268,6 +269,8 @@ export async function treeSync(b, now) {
     delete q.played;                                               // (older versions counted plays for 30 minutes)
     if (Array.isArray(b.drop)) q.items = q.items.filter((x) => !b.drop.includes(x.t)); // requests the tree can't play
     q.open = !!b.open; q.seen = now; q.sec = sec;
+    q.show = b.show && b.show.name ? { name: String(b.show.name).slice(0, 60), ends: b.show.left == null ? null : now + Math.max(0, +b.show.left || 0) * 1000,
+      mode: ['order', 'shuffle', 'random'].includes(b.show.mode) ? b.show.mode : 'order', next: (Array.isArray(b.show.next) ? b.show.next : []).slice(0, 10).map((x) => String(x).slice(0, 60)) } : null;
     q.geo = b.geo && isFinite(+b.geo.lat) && isFinite(+b.geo.lon) ? { lat: +b.geo.lat, lon: +b.geo.lon, radius: Math.max(30, Math.min(5000, +b.geo.radius || 200)) } : null;
     q.why = b.open ? null : ['paused', 'resting', 'live', 'closed'].includes(b.why) ? b.why : 'closed'; q.back = b.open ? null : String(b.back || '').slice(0, 40) || null;
     if (b.limits) q.limits = { lineMin: +b.limits.lineMin }; q.reason = b.open ? null : String(b.reason || 'The tree isn’t taking requests right now.').slice(0, 120);
