@@ -196,10 +196,12 @@ function create(ctx) {
       const loc = ctx.location(); // nearby only: the tree's spot (the schedule's location) goes to the guest site, never to guests
       const body = { geo: c.geo && loc ? { lat: loc.lat, lon: loc.lon, radius: c.radius } : null, open: st.open, reason: st.reason, why: st.why || null, back: st.back || null, sec: c.sec, limits: { lineMin: c.lineMin }, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
       body.evAfter = evSeq;
-      // the tree's own show for the guest page: what plays now and the next 10 (not while a guest's pick plays)
-      const ps = ctx.player && ctx.player.status();
-      body.show = st.open && ps && ps.running && ps.name && !cur && !String(ps.id).startsWith('guest:')
-        ? { name: ps.name, left: ps.hold ? null : ps.left, mode: ps.mode, next: ps.hold ? [] : (ctx.player.upcoming ? ctx.player.upcoming(10) : []).map((x) => x.name) } : null;
+      // the tree's own show for the guest page: what plays now and the next 10. While a guest's pick plays, just the
+      // next 10 (the playlist carries on after it), unless the tree goes back to a held design or to sleep afterwards
+      const ps = ctx.player && ctx.player.status(), guestOn = !!cur || !!(ps && String(ps.id).startsWith('guest:'));
+      const noNext = guestOn ? !!(cur && cur.woke) || !!(ctx.holdDesign && ctx.holdDesign()) : !!(ps && ps.hold);
+      body.show = st.open && ps && ps.running && (ps.name || guestOn)
+        ? { name: guestOn ? null : ps.name, left: guestOn || ps.hold ? null : ps.left, mode: ps.mode, next: noNext ? [] : (ctx.player.upcoming ? ctx.player.upcoming(10) : []).map((x) => x.name) } : null;
       if (clearAsk) body.clear = true;
       if (drop.length) body.drop = drop.slice();
       const cat = catalog(); if (cat.hash !== cloudHash) body.catalog = cat;
