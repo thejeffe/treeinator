@@ -88,16 +88,21 @@ function create(ctx) {
     return `${XA[h % 30]} ${XB[Math.floor(h / 30) % 30]} ${XC[Math.floor(h / 900) % XC.length]}`;
   }
   // A phone's Christmas name as the guest log shows it (the same clash rule: over the log, in order)
+  // (worked out again only when the log has grown)
+  let nameMap = null, nameAt = -1;
   function visitorName(v) {
     if (!v) return null;
-    const names = {}, taken = {};
-    for (const e of readLog(KEEP_DAYS)) {
-      const id = e.v || e.who; if (!id || names[id]) continue;
-      let n = xmasName(id); for (let k = 1; taken[n] && taken[n] !== id; k++) n = xmasName(id + '#' + k);
-      taken[n] = id; names[id] = n;
-      if (id === v) return n;
+    let size = 0; try { size = fs.statSync(LOG).size; } catch (e) { /* no log yet */ }
+    if (!nameMap || size !== nameAt) {
+      const names = {}, taken = {};
+      for (const e of readLog(KEEP_DAYS)) {
+        const id = e.v || e.who; if (!id || names[id]) continue;
+        let n = xmasName(id); for (let k = 1; taken[n] && taken[n] !== id; k++) n = xmasName(id + '#' + k);
+        taken[n] = id; names[id] = n;
+      }
+      nameMap = names; nameAt = size;
     }
-    return xmasName(v);
+    return nameMap[v] || xmasName(v);
   }
   // Visits: a visitor's events with no gap over 30 minutes; each request with how it went.
   // Over the whole log (90 days), so a phone is "new" only on its very first visit, and its rank (how active it is,
@@ -214,6 +219,9 @@ function create(ctx) {
       const noNext = guestOn ? !!(cur && cur.woke) || !!(ctx.holdDesign && ctx.holdDesign()) : !!(ps && ps.hold);
       body.show = st.open && ps && ps.running && (ps.name || guestOn)
         ? { name: guestOn ? null : ps.name, left: guestOn || ps.hold ? null : ps.left, mode: ps.mode, next: noNext ? [] : (ctx.player.upcoming ? ctx.player.upcoming(10) : []).map((x) => x.name) } : null;
+      // who put each waiting pick in the line (their Christmas name), for the guest page
+      const by = {}; for (const it of items.slice(0, 50)) if (it.v) { try { by[it.t] = visitorName(it.v); } catch (e) { /* skip */ } }
+      if (Object.keys(by).length) body.by = by;
       if (clearAsk) body.clear = true;
       if (drop.length) body.drop = drop.slice();
       const cat = catalog(); if (cat.hash !== cloudHash) body.catalog = cat;
