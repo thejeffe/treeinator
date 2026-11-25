@@ -285,8 +285,8 @@ function create(ctx) {
     status() {
       const c = ctx.cfg(), st = state();
       return { enabled: c.enabled, paused: c.paused, geo: c.geo, geoReady: !!ctx.location(), open: st.open, reason: st.reason, site: c.url || null, waiting: items.length,
-        now: cur ? { name: cur.name, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null,
-        items: items.map((it) => { const d = ctx.getDesign(it.id); return { t: it.t, name: d ? d.name : it.name || it.id, msg: it.msg || '', colors: it.colors || [], age: Math.round((Date.now() - (it.at || Date.now())) / 1000) }; }),
+        now: cur ? { name: cur.name, by: cur.by || null, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null,
+        items: items.map((it) => { const d = ctx.getDesign(it.id); let by = null; try { by = visitorName(it.v); } catch (e) { /* none */ } return { t: it.t, by, name: d ? d.name : it.name || it.id, msg: it.msg || '', colors: it.colors || [], age: Math.round((Date.now() - (it.at || Date.now())) / 1000) }; }),
         lastContact: lastOk ? Math.round((Date.now() - lastOk) / 1000) : null, error: lastErr };
     },
   };

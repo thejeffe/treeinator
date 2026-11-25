@@ -116,6 +116,7 @@ input[type=range]{width:100%;min-width:0;accent-color:var(--accent);margin:0}
 .garef{font:inherit;font-size:14px;line-height:1;padding:1px 7px;border-radius:6px;vertical-align:1px}
 .galist .gsw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:3px;vertical-align:-1px;border:1px solid #0004}
 .galist{max-height:320px;overflow:auto;margin-top:6px;border-top:1px solid var(--rule)}.galist .v{padding:6px 0;border-bottom:1px solid var(--rule)}.galist .v small{color:var(--mute,#888)}.galist .ok{color:#2a8a4a}.galist .bad{color:#b3412f}
+.gql .gby{color:var(--gold,#e6b84a)}.gqbox h3{margin:4px 0;font-size:14px}
 .gql{grid-column:1/-1;list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;font-size:13px}.gql li{padding:4px 0;border-bottom:1px solid var(--rule)}.gql li.now{font-weight:600}.gql .n{display:inline-block;min-width:1.6em;color:var(--mute,#888)}.gql .gsw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-left:3px;vertical-align:-1px;border:1px solid #0004}.gql button{float:right;font:inherit;font-size:12px;padding:0 7px;margin-left:6px}.gql small{color:var(--mute,#888)}
 input[type=text],input[type=number],input[type=password]{font:400 13px var(--body);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:5px 7px;min-width:0}
 input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;width:4.2em;text-align:right;padding:4px 5px}
@@ -476,6 +477,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
   <h2 id="schTitle">Schedule</h2>
   <label class="chk"><input id="schOn" type="checkbox">Run the tree on this schedule</label>
   <p class="note" id="schOnNote"></p>
+  <div class="gqbox" data-hide-empty="1" hidden><h3>Guests in line</h3><ul class="gql gqline"></ul></div>
   <p class="note" id="schInfo"></p>
   <div id="schLoc"><label>Latitude<input id="schLat" type="number" step="0.0001" min="-90" max="90" inputmode="decimal" placeholder="34.05"></label><label>Longitude<input id="schLon" type="number" step="0.0001" min="-180" max="180" inputmode="decimal" placeholder="-118.25"></label><button type="button" id="schGeo">Use my location</button></div>
   <p id="schSun"></p>
@@ -516,6 +518,7 @@ input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums;wid
 <dialog id="gaDlg" aria-labelledby="gaTitle">
  <form method="dialog" id="gaForm">
   <h2 id="gaTitle">Guests</h2>
+  <div class="gqbox"><h3>In line now</h3><ul class="gql gqline"></ul></div>
   <div id="gaHost"></div>
   <div class="acts"><button type="button" id="gaDone">Done</button></div>
  </form>
@@ -847,6 +850,7 @@ $('surprise').addEventListener('click',function(){var r=E.randomLook();var d={id
  Store.putDesign(d).then(function(){renderLists();tryDesign(d);say(smsg,'Made “'+d.name+'”. Tap + to add it to the playlist.')}).catch(function(e){say(smsg,e.message,true)})});
 // Tapping the badge: during an OVERRIDE it hands the tree back to the schedule; otherwise it opens the schedule.
 $('modeBadge').addEventListener('click',function(){var b=this;
+ if(b.classList.contains('guest')){$('guestBtn').click();return}
  if(!b.classList.contains('override')){$('schBtn').click();return}
  if(live)stopLive();if(local.running)local.stop();tryLook=null;
  var m=app.dataset.view==='mix'?msg:smsg;b.disabled=true;$('modeInfo').textContent='Going back to the schedule…';
@@ -924,8 +928,9 @@ document.querySelectorAll('#viewSeg button[data-v]').forEach(function(b){b.addEv
  function gqEsc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
  function gqSw(cs){return (cs||[]).map(function(c){return '<span class="gsw" style="background:'+gqEsc(c)+'"></span>'}).join('')}
  function gqAge(s){return s<60?s+' s':Math.round(s/60)+' min'}
- function guestList(g){var l=$('sGqList');var h=g.now?'<li class="now">\u25b6 '+gqEsc(g.now.name)+' <small>('+g.now.left+' s left)</small></li>':'';h+=(g.items||[]).map(function(it,i){return '<li><button type="button" data-rm="'+gqEsc(it.t)+'" title="Take it out of the line">\u2715</button><span class="n">'+(i+1)+'.</span>'+gqEsc(it.name)+gqSw(it.colors)+(it.msg?' <small>\u201c'+gqEsc(it.msg).replace(/&lt;/g,'\u2665')+'\u201d</small>':'')+' <small>\u00b7 '+gqAge(it.age)+' ago</small></li>'}).join('');l.innerHTML=h||'<li class="now"><small>Nobody in line.</small></li>';l.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){fetch('api/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remove',t:b.dataset.rm})}).then(function(){setTimeout(guestStat,300)})}})}
- setInterval(function(){var d=$('sGqList');if(d&&d.offsetParent)guestStat()},3000); // while the Guests tab is open
+ function guestList(g){var by=function(x){return x.by?' <small class="gby">\u00b7 added by \ud83c\udf81 '+gqEsc(x.by)+'</small>':''};var h=g.now?'<li class="now">\u25b6 '+gqEsc(g.now.name)+by(g.now)+' <small>('+g.now.left+' s left)</small></li>':'';h+=(g.items||[]).map(function(it,i){return '<li><button type="button" data-rm="'+gqEsc(it.t)+'" title="Take it out of the line">\u2715</button><span class="n">'+(i+1)+'.</span>'+gqEsc(it.name)+gqSw(it.colors)+(it.msg?' <small>\u201c'+gqEsc(it.msg).replace(/&lt;/g,'\u2665')+'\u201d</small>':'')+by(it)+' <small>\u00b7 '+gqAge(it.age)+' ago</small></li>'}).join('');[$('sGqList')].concat([].slice.call(document.querySelectorAll('.gqline'))).forEach(function(l){l.innerHTML=h||'<li class="now"><small>Nobody in line.</small></li>';var box=l.closest('.gqbox');if(box)box.hidden=!h&&box.dataset.hideEmpty==='1';l.querySelectorAll('[data-rm]').forEach(function(b){b.onclick=function(){fetch('api/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remove',t:b.dataset.rm})}).then(function(){setTimeout(guestStat,300)})}})})}
+ window.guestStat=guestStat;
+ setInterval(function(){var d=$('sGqList');if((d&&d.offsetParent)||[].some.call(document.querySelectorAll('dialog[open] .gqline'),function(x){return 1}))guestStat()},3000); // while the Guests tab is open
  // QR code and sign: preview and downloads for the link typed (or the saved one)
  function gqQr(){var l=$('sGqLink').value.trim(),q=l?'link='+encodeURIComponent(l)+'&':'';$('sGqImg').src='api/guest/qr.svg?'+q+'t='+Date.now();$('sGqSvg').href='api/guest/qr.svg?'+q+'download=1';$('sGqPdf').href='api/guest/sign.pdf?'+q+'download=1';$('sGqSign').href='api/guest/sign.svg?'+q+'download=1'}
  $('sGqLink').addEventListener('change',gqQr);
@@ -1229,7 +1234,7 @@ $('plDel').addEventListener('click',function(){var pl=Store.playlist;if(!window.
    $('schOn').checked=!!j.schedule.enabled;$('schLat').value=j.schedule.lat==null?'':j.schedule.lat;$('schLon').value=j.schedule.lon==null?'':j.schedule.lon;SUN_EST=false;SUN=j.now.sun;list.innerHTML='';(j.schedule.entries||[]).forEach(row);
    if(!list.children.length)row({days:[0,1,2,3,4,5,6],start:'17:00',end:'23:00',what:'playlist:'+Store.activeId});
    $('schInfo').textContent='Times are the tree-show server’s clock: it’s '+DAYS[j.now.day]+' '+j.now.time+' ('+j.now.tz+'). Times can be a clock time or sunset, dusk, sunrise or dawn with an offset (dawn and dusk are civil twilight). A time that ends after midnight is fine. When times overlap, the one higher in the list plays: use ↑ ↓ to put an override above the times it should beat. Outside every time the tree is off. If you press Play, Stop or On tree yourself, that sticks until the schedule’s next change.';
-   showSun(j.now.sun);showConf(j.conflicts);showPlan(j.plan,!!j.schedule.enabled,j.conflicts);onNote();say(sm,'');dlg.showModal()}).catch(function(){say(smsg,'Couldn’t load the schedule.',true)})});
+   if(window.guestStat)guestStat();   showSun(j.now.sun);showConf(j.conflicts);showPlan(j.plan,!!j.schedule.enabled,j.conflicts);onNote();say(sm,'');dlg.showModal()}).catch(function(){say(smsg,'Couldn’t load the schedule.',true)})});
  $('schAdd').addEventListener('click',function(){row({days:[0,1,2,3,4,5,6],start:'17:00',end:'23:00',what:'playlist:'+Store.playlist.id});check()});
  $('schCancel').addEventListener('click',function(){dlg.close()});
  $('schForm').addEventListener('submit',function(ev){ev.preventDefault();var body={enabled:$('schOn').checked,lat:$('schLat').value,lon:$('schLon').value,entries:[].map.call(list.children,function(r){return r._read()})};
@@ -1384,6 +1389,7 @@ Store.init().then(function(){local.setPlaylist(Store.playlist);syncOpts();render
     if (g.parentNode !== host) { home = g.parentNode; after = g.nextSibling; host.appendChild(g); }
     dlg.showModal();
     if (typeof guestActivity === 'function') guestActivity();
+    if (typeof guestStat === 'function') guestStat();
   }
   function close() { if (home) { home.insertBefore(document.querySelector('#gaHost .gact'), after); home = null; } if (dlg.open) dlg.close(); }
   document.getElementById('guestBtn').addEventListener('click', open);
