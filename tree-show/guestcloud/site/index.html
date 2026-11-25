@@ -27,7 +27,7 @@ main{max-width:560px;margin:0 auto;padding:0 12px}
 .hide{display:none!important}
 /* scene with the title */
 /* the banner keeps the drawing's proportions (400 x 74): taller on wide screens, never cropped */
-.scene{position:relative;width:100%;max-width:760px;margin:0 auto;aspect-ratio:400/74;overflow:hidden;background:linear-gradient(#05101c,#0b1a12);container-type:inline-size;border-radius:0 0 14px 14px}
+.scene{position:relative;width:calc(100% - 24px);max-width:536px;margin:0 auto;aspect-ratio:400/74;overflow:hidden;background:linear-gradient(#05101c,#0b1a12);container-type:inline-size;border-radius:0 0 14px 14px}
 .scene svg{position:absolute;inset:0;width:100%;height:100%}
 .scene h1{position:absolute;left:3.6%;bottom:16%;margin:0;white-space:nowrap;font-size:clamp(14px,5.6vw,42px);font-size:5.6cqw;line-height:1.05;max-width:62%;text-shadow:0 2px 8px #000}
 .scene h1 span{color:var(--gold)}
@@ -94,7 +94,7 @@ canvas{width:108px;height:144px;display:block;border-radius:9px;background:#0508
 .hint{color:var(--dim);font-size:12px;margin:4px 0 0}
 /* the button and messages */
 .go{position:fixed;left:0;right:0;bottom:0;padding:8px 12px calc(8px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 35%)}
-.go div{max-width:560px;margin:0 auto}
+.go div{max-width:536px;margin:0 auto}
 .go p{margin:0 0 6px;font-size:14px;text-align:center;min-height:1.2em;color:#ffb4a8;text-shadow:0 1px 4px #000}
 .go p.ok{color:#bff0cf}
 .go button svg{width:24px;height:24px;vertical-align:-6px;margin-right:8px}
@@ -102,7 +102,6 @@ canvas{width:108px;height:144px;display:block;border-radius:9px;background:#0508
 .go button{width:100%;font:inherit;font-size:17px;font-weight:700;padding:13px;border:0;border-radius:13px;background:var(--red);color:#fff;box-shadow:0 6px 20px #0008}
 .go button:disabled{background:#4b3a38;color:#c9b4b0}
 /* typing a message: the button stops floating (it would sit on top of the keyboard and the box), the box scrolls into view */
-body.tight .scene{max-width:330px}
 body.tight canvas{width:90px;height:120px}body.tight .make{grid-template-columns:90px minmax(0,1fr)}
 body.tight .hint{display:none}
 /* typing: the button rides just above the keyboard (placeGo), with room to scroll the box above it */
@@ -335,7 +334,7 @@ function drawQueue(q) {
   var mine = [], showNext = q.show && q.show.next ? q.show.next : [];
   $('q').innerHTML = q.items.map(function (it, i) {
     if (it.mine) mine.push(i);
-    return '<li class="' + (it.mine ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><span class="w">' + (it.mine ? '★ ' : '') + esc(it.name) + swatches(it.colors) + (it.msg ? ' <small>“' + showMsg(it.msg) + '”</small>' : '') + '<small class="who">' + (it.mine ? 'Yours' : it.by ? '🎁 ' + esc(it.by) : 'A guest') + '</small></span>' + (it.mine ? '<button class="x" type="button" data-cancel="' + esc(it.t) + '">Cancel</button>' : '') + '</li>';
+    return '<li class="' + (it.mine ? 'mine' : '') + '"><span class="n">' + it.pos + '</span><span class="w">' + (it.mine ? '★ ' : '') + esc(it.name) + swatches(it.colors) + (it.msg ? ' <small>“' + showMsg(it.msg) + '”</small>' : '') + '<small class="who">' + (it.mine ? 'Added by you' : it.by ? 'Added by 🎁 ' + esc(it.by) : 'Added by a guest') + '</small></span>' + (it.mine ? '<button class="x" type="button" data-cancel="' + esc(it.t) + '">Cancel</button>' : '') + '</li>';
   }).join('')
     // then the tree's own show: the next designs on its playlist (guests' picks play in between)
     + (showNext.length ? '<li class="hdr">' + (q.items.length || q.now ? 'Then the tree’s show' : 'Coming up on the tree’s show') + (q.show.mode === 'shuffle' ? ' (shuffled)' : '') + '</li>'
@@ -461,10 +460,9 @@ function fit() {
   if (document.body.classList.contains('typing')) return;     // the keyboard is up: scrolling to the box is fine
   var g = $('designs'), sc = document.querySelector('.scene'), fits = function () { return document.documentElement.scrollHeight <= window.innerHeight + 1; };
   var tries = function () { for (ROWS = 4; ROWS >= 2; ROWS--) { g.style.gridTemplateRows = 'repeat(' + ROWS + ',auto)'; if (fits()) return true; } return false; };
-  document.body.classList.remove('tight'); sc.style.maxWidth = '';
+  document.body.classList.remove('tight');
   if (tries()) return;
-  for (var w of [560, 420]) { sc.style.maxWidth = w + 'px'; if (tries()) return; } // a smaller banner, same shape
-  sc.style.maxWidth = ''; document.body.classList.add('tight'); tries();                // the smallest: banner and preview
+  document.body.classList.add('tight'); tries();          // the smallest: a smaller preview (the banner always matches the boxes' width)
 }
 window.addEventListener('resize', function () { clearTimeout(fit.t); fit.t = setTimeout(fit, 120); });
 // The phone's keyboard: keep the message box in sight above it.
