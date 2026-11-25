@@ -87,6 +87,18 @@ function create(ctx) {
     for (const ch of String(id)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
     return `${XA[h % 30]} ${XB[Math.floor(h / 30) % 30]} ${XC[Math.floor(h / 900) % XC.length]}`;
   }
+  // A phone's Christmas name as the guest log shows it (the same clash rule: over the log, in order)
+  function visitorName(v) {
+    if (!v) return null;
+    const names = {}, taken = {};
+    for (const e of readLog(KEEP_DAYS)) {
+      const id = e.v || e.who; if (!id || names[id]) continue;
+      let n = xmasName(id); for (let k = 1; taken[n] && taken[n] !== id; k++) n = xmasName(id + '#' + k);
+      taken[n] = id; names[id] = n;
+      if (id === v) return n;
+    }
+    return xmasName(v);
+  }
   // Visits: a visitor's events with no gap over 30 minutes; each request with how it went.
   // Over the whole log (90 days), so a phone is "new" only on its very first visit, and its rank (how active it is,
   // against every phone seen) doesn't depend on the days shown.
@@ -194,7 +206,7 @@ function create(ctx) {
     try {
       const st = state(); lastOpen = st.open;
       const loc = ctx.location(); // nearby only: the tree's spot (the schedule's location) goes to the guest site, never to guests
-      const body = { geo: c.geo && loc ? { lat: loc.lat, lon: loc.lon, radius: c.radius } : null, open: st.open, reason: st.reason, why: st.why || null, back: st.back || null, sec: c.sec, limits: { lineMin: c.lineMin }, now: cur ? { t: cur.t, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
+      const body = { geo: c.geo && loc ? { lat: loc.lat, lon: loc.lon, radius: c.radius } : null, open: st.open, reason: st.reason, why: st.why || null, back: st.back || null, sec: c.sec, limits: { lineMin: c.lineMin }, now: cur ? { t: cur.t, by: cur.by || null, left: Math.max(0, Math.round((cur.ends - Date.now()) / 1000)) } : null };
       body.evAfter = evSeq;
       // the tree's own show for the guest page: what plays now and the next 10. While a guest's pick plays, just the
       // next 10 (the playlist carries on after it), unless the tree goes back to a held design or to sleep afterwards
@@ -226,7 +238,7 @@ function create(ctx) {
     const gd = { id: 'guest:' + it.t, name, look };
     const woke = !ctx.running();                 // only with the testing override: the tree was off
     ctx.player.playDesign(gd, c.sec, true);
-    cur = { t: it.t, id: gd.id, ends: Date.now() + c.sec * 1000, name, woke: cur && cur.woke ? true : woke };
+    cur = { t: it.t, id: gd.id, ends: Date.now() + c.sec * 1000, name, by: (() => { try { return visitorName(it.v); } catch (e) { return null; } })(), woke: cur && cur.woke ? true : woke };
     note([{ at: Date.now(), k: 'played', t: it.t, name: d.name, msg }]);
     ctx.log(`Guest request: ${name}`);
     return true;

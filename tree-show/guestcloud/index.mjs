@@ -138,7 +138,7 @@ function publicQueue(q, now, mine) { // mine: the guest's own tickets (a Set)
     reason: open ? null : now - q.seen >= TREE_STALE_MS ? 'The tree isn’t taking requests right now.' : q.reason || 'The tree isn’t taking requests right now.',
     geo: !!q.geo, sec: q.sec, perGuest: share(q).max, busy: share(q).busy, cat: q.catHash || null, // cat: the design list's version
     show: open && q.show && (q.show.name || q.show.next.length) ? { name: q.now ? null : q.show.name, left: q.show.ends ? Math.max(0, Math.round((q.show.ends - now) / 1000)) : null, mode: q.show.mode, next: q.show.next } : null,
-    now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
+    now: q.now ? { name: q.now.name, msg: q.now.msg, colors: q.now.colors, by: isMine(q.now.t) ? null : q.now.by || null, left: Math.max(0, Math.round((q.now.ends - now) / 1000)), mine: isMine(q.now.t) } : null,
     items: q.items.map((it, i) => Object.assign({ pos: i + 1, name: it.name, msg: it.msg, colors: it.colors, mine: isMine(it.t) }, isMine(it.t) ? { t: it.t } : {})),
   };
 }
@@ -243,7 +243,7 @@ async function request(ev, b, now) {
     const step = (q.sec || 45) * 1000, slot = Math.max(now, ((q.slot || {})[who] || 0) + step);
     let at = q.items.length;
     for (let i = 0; i < q.items.length; i++) if ((q.items[i].slot || q.items[i].at) > slot) { at = i; break; }
-    q.items.splice(at, 0, { t, who, id: d.id, name: d.name, colors, msg: m.text, at: now, slot });
+    q.items.splice(at, 0, { t, who, v: clip(body.v, 16) || undefined, id: d.id, name: d.name, colors, msg: m.text, at: now, slot });
     q.slot = q.slot || {}; q.slot[who] = slot;
     for (const k in q.slot) if (q.slot[k] < now - 3600000) delete q.slot[k];
     q.rate[who] = (q.rate[who] || []).concat(now);
@@ -278,9 +278,9 @@ export async function treeSync(b, now) {
     if (n) {
       const i = q.items.findIndex((x) => x.t === n.t);
       const it = i >= 0 ? q.items.splice(i, 1)[0] : q.now && q.now.t === n.t ? q.now : null;
-      if (it) q.now = { t: it.t, name: it.name, msg: it.msg, colors: it.colors, ends: now + Math.max(0, +n.left || 0) * 1000 };
+      if (it) q.now = { t: it.t, name: it.name, msg: it.msg, colors: it.colors, by: n.by ? String(n.by).slice(0, 60) : (q.now && q.now.t === n.t ? q.now.by : null), ends: now + Math.max(0, +n.left || 0) * 1000 };
     } else q.now = null;
-    return { items: q.items.map(({ t, id, name, colors, msg, at }) => ({ t, id, name, colors, msg, at })) };
+    return { items: q.items.map(({ t, v, id, name, colors, msg, at }) => ({ t, v, id, name, colors, msg, at })) };
   }, EMPTY);
   const cat = await store.get('catalog');
   const h = cat ? cat.d.hash : null;
